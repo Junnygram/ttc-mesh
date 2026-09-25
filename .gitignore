@@ -23,3 +23,7 @@ Thumbs.db
 
 # Docker local data (if any)
 *.log
+
+# Personal Demo Script & Teleprompter
+DEMO_SCRIPT.md
+

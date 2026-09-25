@@ -1,77 +1,299 @@
-name: TTC-Mesh-Istio-Pattern
-services:
-  ttc-gateway:
-    name: ttc-gateway
-    type: Gateway
-    namespace: ttc-mesh
-    settings:
-      servers:
-        - port:
-            number: 80
-            name: http
-            protocol: HTTP
-          hosts:
-            - "transit.toronto.local"
-
-  ttc-virtual-service:
-    name: ttc-virtual-service
-    type: VirtualService
-    namespace: ttc-mesh
-    settings:
-      hosts:
-        - "transit.toronto.local"
-      gateways:
-        - ttc-gateway
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: ttc-mesh
+  labels:
+    istio-injection: enabled
+    app.kubernetes.io/part-of: ttc-mesh
+---
+# 1. External Ingress Gateway
+apiVersion: networking.istio.io/v1beta1
+kind: Gateway
+metadata:
+  name: ttc-ingress-gateway
+  namespace: ttc-mesh
+spec:
+  selector:
+    istio: ingressgateway
+  servers:
+  - port:
+      number: 80
+      name: http
+      protocol: HTTP
+    hosts:
+    - "transit.toronto.local"
+---
+# 2. External Upstream ServiceEntry (City of Toronto GTFS-RT Protobuf Feed)
+apiVersion: networking.istio.io/v1beta1
+kind: ServiceEntry
+metadata:
+  name: ttc-bustime-upstream
+  namespace: ttc-mesh
+spec:
+  hosts:
+  - "bustime.ttc.ca"
+  ports:
+  - number: 443
+    name: https
+    protocol: HTTPS
+  resolution: DNS
+  location: MESH_EXTERNAL
+---
+# 3. VirtualService with 90/10 Canary Routing
+apiVersion: networking.istio.io/v1beta1
+kind: VirtualService
+metadata:
+  name: ttc-api-virtualservice
+  namespace: ttc-mesh
+spec:
+  hosts:
+  - "transit.toronto.local"
+  gateways:
+  - ttc-ingress-gateway
+  http:
+  - match:
+    - uri:
+        prefix: /api/transit
+    - uri:
+        prefix: /graphql
+    - uri:
+        prefix: /ws/transit
+    route:
+    - destination:
+        host: ttc-api-service.ttc-mesh.svc.cluster.local
+        port:
+          number: 8000
+        subset: v1
+      weight: 90
+    - destination:
+        host: ttc-api-service.ttc-mesh.svc.cluster.local
+        port:
+          number: 8000
+        subset: v2-canary
+      weight: 10
+    retries:
+      attempts: 3
+      perTryTimeout: 2s
+      retryOn: "5xx,connect-failure,refused-stream"
+---
+# 4. DestinationRule (mTLS & Canary Subsets)
+apiVersion: networking.istio.io/v1beta1
+kind: DestinationRule
+metadata:
+  name: ttc-api-destinationrule
+  namespace: ttc-mesh
+spec:
+  host: ttc-api-service.ttc-mesh.svc.cluster.local
+  trafficPolicy:
+    tls:
+      mode: ISTIO_MUTUAL
+    loadBalancer:
+      simple: ROUND_ROBIN
+    connectionPool:
+      tcp:
+        maxConnections: 1024
       http:
-        - match:
-            - uri:
-                prefix: /api/transit
-          route:
-            - destination:
-                host: ttc-api.ttc-mesh.svc.cluster.local
-                port:
-                  number: 8000
-                subset: v1
-              weight: 90
-            - destination:
-                host: ttc-api.ttc-mesh.svc.cluster.local
-                port:
-                  number: 8000
-                subset: v2-canary
-              weight: 10
-          retries:
-            attempts: 3
-            perTryTimeout: 2s
-            retryOn: "5xx,connect-failure,refused-stream"
-
-  ttc-destination-rule:
-    name: ttc-destination-rule
-    type: DestinationRule
-    namespace: ttc-mesh
-    settings:
-      host: ttc-api.ttc-mesh.svc.cluster.local
-      trafficPolicy:
-        tls:
-          mode: ISTIO_MUTUAL
-        loadBalancer:
-          simple: ROUND_ROBIN
-      subsets:
-        - name: v1
-          labels:
-            version: v1
-        - name: v2-canary
-          labels:
-            version: v2-canary
-
-  ttc-telemetry:
-    name: ttc-telemetry
-    type: Telemetry
-    namespace: ttc-mesh
-    settings:
-      metrics:
-        - providers:
-            - name: prometheus
-          overrides:
-            - match:
-                metric: REQUEST_COUNT
-                mode: CLIENT_AND_SERVER
+        http1MaxPendingRequests: 100
+        maxRequestsPerConnection: 10
+  subsets:
+  - name: v1
+    labels:
+      version: v1
+  - name: v2-canary
+    labels:
+      version: v2-canary
+---
+# 5. Core API Service & Deployments (v1 and v2-canary)
+apiVersion: v1
+kind: Service
+metadata:
+  name: ttc-api-service
+  namespace: ttc-mesh
+  labels:
+    app: ttc-api
+spec:
+  ports:
+  - port: 8000
+    name: http-api
+    targetPort: 8000
+  selector:
+    app: ttc-api
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ttc-api-v1
+  namespace: ttc-mesh
+  labels:
+    app: ttc-api
+    version: v1
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: ttc-api
+      version: v1
+  template:
+    metadata:
+      labels:
+        app: ttc-api
+        version: v1
+    spec:
+      containers:
+      - name: ttc-api
+        image: ttc-mesh/api:v1.0.0
+        ports:
+        - containerPort: 8000
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ttc-api-v2-canary
+  namespace: ttc-mesh
+  labels:
+    app: ttc-api
+    version: v2-canary
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: ttc-api
+      version: v2-canary
+  template:
+    metadata:
+      labels:
+        app: ttc-api
+        version: v2-canary
+    spec:
+      containers:
+      - name: ttc-api
+        image: ttc-mesh/api:v2.0.0-canary
+        ports:
+        - containerPort: 8000
+---
+# 6. Ingestion Collector Deployment & Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: ttc-collector-service
+  namespace: ttc-mesh
+  labels:
+    app: ttc-collector
+spec:
+  ports:
+  - port: 8001
+    name: http-metrics
+    targetPort: 8001
+  selector:
+    app: ttc-collector
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ttc-collector
+  namespace: ttc-mesh
+  labels:
+    app: ttc-collector
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: ttc-collector
+  template:
+    metadata:
+      labels:
+        app: ttc-collector
+    spec:
+      containers:
+      - name: ttc-collector
+        image: ttc-mesh/collector:latest
+        ports:
+        - containerPort: 8001
+---
+# 7. Redis Cache Service & Deployment
+apiVersion: v1
+kind: Service
+metadata:
+  name: ttc-redis-service
+  namespace: ttc-mesh
+  labels:
+    app: ttc-redis
+spec:
+  ports:
+  - port: 6379
+    name: tcp-redis
+    targetPort: 6379
+  selector:
+    app: ttc-redis
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ttc-redis
+  namespace: ttc-mesh
+  labels:
+    app: ttc-redis
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: ttc-redis
+  template:
+    metadata:
+      labels:
+        app: ttc-redis
+    spec:
+      containers:
+      - name: redis
+        image: redis:7-alpine
+        ports:
+        - containerPort: 6379
+---
+# 8. Observability: Jaeger, Prometheus, Grafana
+apiVersion: v1
+kind: Service
+metadata:
+  name: ttc-jaeger-service
+  namespace: ttc-mesh
+  labels:
+    app: jaeger
+spec:
+  ports:
+  - port: 16686
+    name: http-query
+    targetPort: 16686
+  - port: 4317
+    name: grpc-otlp
+    targetPort: 4317
+  selector:
+    app: jaeger
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ttc-prometheus-service
+  namespace: ttc-mesh
+  labels:
+    app: prometheus
+spec:
+  ports:
+  - port: 9090
+    name: http-prometheus
+    targetPort: 9090
+  selector:
+    app: prometheus
+---
+# 9. Mesh-wide Envoy Telemetry Configuration
+apiVersion: telemetry.istio.io/v1alpha1
+kind: Telemetry
+metadata:
+  name: ttc-mesh-telemetry
+  namespace: ttc-mesh
+spec:
+  metrics:
+  - providers:
+    - name: prometheus
+  tracing:
+  - providers:
+    - name: jaeger
+    randomSamplingPercentage: 100.0
