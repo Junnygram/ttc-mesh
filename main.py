@@ -193,6 +193,19 @@ async def add_trace_header(request: Request, call_next):
         trace_id = format(current_span.get_span_context().trace_id, "032x")
         response.headers["X-Trace-Id"] = trace_id
         response.headers["X-Jaeger-Trace-URL"] = f"{JAEGER_PUBLIC_URL}/trace/{trace_id}"
+        if not request.url.path.startswith("/metrics"):
+            try:
+                loki_payload = {
+                    "streams": [
+                        {
+                            "stream": {"app": "ttc-api", "method": request.method, "path": request.url.path, "status": str(response.status_code)},
+                            "values": [[str(time.time_ns()), f"{request.method} {request.url.path} status={response.status_code} | trace_id={trace_id}"]]
+                        }
+                    ]
+                }
+                requests.post("http://loki:3100/loki/api/v1/push", json=loki_payload, timeout=0.5)
+            except Exception:
+                pass
     return response
 
 # Mount GraphQL router

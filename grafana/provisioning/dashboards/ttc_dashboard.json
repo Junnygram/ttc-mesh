@@ -302,6 +302,32 @@
       ],
       "title": "FastAPI Throughput (Requests/sec)",
       "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "loki", "uid": "Loki" },
+      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 14 },
+      "id": 7,
+      "options": {
+        "dedupStrategy": "none",
+        "enableLogDetails": true,
+        "prettifyLogMessage": false,
+        "showCommonLabels": false,
+        "showLabels": false,
+        "showTime": true,
+        "sortOrder": "Descending",
+        "wrapLogMessage": true
+      },
+      "targets": [
+        {
+          "datasource": { "type": "loki", "uid": "Loki" },
+          "editorMode": "code",
+          "expr": "{app=~\"ttc-.*\"}",
+          "queryType": "range",
+          "refId": "A"
+        }
+      ],
+      "title": "Live Transit Telemetry & Collector Logs (Loki)",
+      "type": "logs"
     }
   ],
   "refresh": "5s",

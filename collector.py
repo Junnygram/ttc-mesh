@@ -45,6 +45,26 @@ AVG_SPEED_GAUGE = Gauge("ttc_fleet_avg_speed_kmh", "Average current speed of the
 
 r = redis.Redis(host=REDIS_HOST, port=REDIS_PORT, decode_responses=True)
 
+def push_to_loki(log_message: str, trace_id: str, level: str = "info"):
+    try:
+        payload = {
+            "streams": [
+                {
+                    "stream": {
+                        "app": "ttc-collector",
+                        "level": level,
+                        "service_name": "ttc-collector"
+                    },
+                    "values": [
+                        [str(time.time_ns()), f"{log_message} | trace_id={trace_id}"]
+                    ]
+                }
+            ]
+        }
+        requests.post("http://loki:3100/loki/api/v1/push", json=payload, timeout=1.0)
+    except Exception:
+        pass
+
 def dispatch_webhooks(event_type: str, payload: dict):
     with tracer.start_as_current_span("dispatch_webhooks") as span:
         webhook_urls = r.smembers("ttc:webhooks")
@@ -153,11 +173,16 @@ def fetch_and_store_ttc_vehicles():
             SYNC_DURATION_HISTOGRAM.observe(duration)
             root_span.set_attribute("sync.duration_seconds", duration)
             root_span.set_attribute("sync.vehicles_count", total_vehicles)
-            print(f"[{time.strftime('%X')}] Synced {total_vehicles} vehicles ({speed_count} moving) in {duration:.2f}s (Trace ID: {format(root_span.get_span_context().trace_id, '032x')[:8]}...)")
+            trace_id_str = format(root_span.get_span_context().trace_id, "032x")
+            sync_log = f"Synced {total_vehicles} vehicles ({speed_count} moving) in {duration:.2f}s"
+            print(f"[{time.strftime('%X')}] {sync_log} (Trace ID: {trace_id_str[:8]}...)")
+            push_to_loki(sync_log, trace_id_str, level="info")
         except Exception as e:
             SYNC_ERRORS_COUNTER.inc()
             root_span.record_exception(e)
+            err_trace_id = format(root_span.get_span_context().trace_id, "032x") if root_span else "N/A"
             print(f"[{time.strftime('%X')}] Error fetching TTC feed: {e}")
+            push_to_loki(f"Error fetching TTC feed: {e}", err_trace_id, level="error")
 
 if __name__ == "__main__":
     print(f"Starting Prometheus Collector Metrics Server on port {METRICS_PORT}...")

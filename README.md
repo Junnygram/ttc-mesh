@@ -143,7 +143,7 @@ A common question: *Do I need the Docker Agent VM to use Meshery?*
 | Mode | Where It Runs | How to Run | Use Case |
 | :--- | :--- | :--- | :--- |
 | **Local Mode (Default)** | On your Mac Mini via OrbStack / Docker Engine | `brew install mesheryctl`<br>`mesheryctl system start --platform docker` | Day-to-day visual design, canary routing, local Istio mesh inspection at `http://localhost:9081`. |
-| **Docker Sandboxes (Cloud MicroVM)** | Remote Docker Agentic Platform ($250 credit) | `sbx create`<br>`sbx exec "docker compose up -d"` | Remote CI/CD validation, autonomous AI agent workflows, and sharing live sandbox environments with remote reviewers. |
+| **Docker Sandboxes (Cloud MicroVM)** | Remote Docker Agentic Platform | `sbx create`<br>`sbx exec "docker compose up -d"` | Remote CI/CD validation, autonomous AI agent workflows, and sharing live sandbox environments with remote reviewers. |
 
 ### Running Meshery Locally in 2 Commands:
 ```bash
@@ -159,7 +159,7 @@ Access the Meshery Visual Canvas at `http://localhost:9081` and import [`meshery
 
 ## ☁️ Automated Validation in Docker Sandboxes
 
-Using your $250 promotional credit on Docker Agentic Platform (`agentic-platform.docker.com`):
+Cloud execution and isolated testing via Docker Agentic Platform (`agentic-platform.docker.com`):
 ```bash
 # Provision isolated cloud microVM
 sbx create --size small
