@@ -142,6 +142,10 @@ spec:
       containers:
       - name: ttc-api
         image: ttc-mesh/api:v1.0.0
+        imagePullPolicy: IfNotPresent
+        env:
+        - name: REDIS_HOST
+          value: "ttc-redis-service"
         ports:
         - containerPort: 8000
 ---
@@ -168,6 +172,10 @@ spec:
       containers:
       - name: ttc-api
         image: ttc-mesh/api:v2.0.0-canary
+        imagePullPolicy: IfNotPresent
+        env:
+        - name: REDIS_HOST
+          value: "ttc-redis-service"
         ports:
         - containerPort: 8000
 ---
@@ -207,6 +215,10 @@ spec:
       containers:
       - name: ttc-collector
         image: ttc-mesh/collector:latest
+        imagePullPolicy: IfNotPresent
+        env:
+        - name: REDIS_HOST
+          value: "ttc-redis-service"
         ports:
         - containerPort: 8001
 ---
