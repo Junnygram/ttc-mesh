@@ -1,0 +1,133 @@
+services:
+  # -------------------------------------------------------------
+  # Storage & Cache Layer
+  # -------------------------------------------------------------
+  redis:
+    image: redis:7-alpine
+    container_name: ttc-redis
+    ports:
+      - "6379:6379"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    networks:
+      - ttc-mesh-net
+
+  # -------------------------------------------------------------
+  # Application Services
+  # -------------------------------------------------------------
+  collector:
+    build: .
+    container_name: ttc-collector
+    command: python collector.py
+    restart: unless-stopped
+    volumes:
+      - .:/app
+    environment:
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - METRICS_PORT=8001
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://jaeger:4317
+    ports:
+      - "8001:8001"
+    depends_on:
+      redis:
+        condition: service_healthy
+      jaeger:
+        condition: service_started
+    networks:
+      - ttc-mesh-net
+
+  api:
+    build: .
+    container_name: ttc-api
+    ports:
+      - "8000:8000"
+    restart: unless-stopped
+    volumes:
+      - .:/app
+    environment:
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://jaeger:4317
+      - JAEGER_PUBLIC_URL=http://localhost:16686
+    depends_on:
+      redis:
+        condition: service_healthy
+      jaeger:
+        condition: service_started
+    networks:
+      - ttc-mesh-net
+
+  # -------------------------------------------------------------
+  # CNCF Observability: Jaeger Distributed Tracing
+  # -------------------------------------------------------------
+  jaeger:
+    image: jaegertracing/all-in-one:1.57
+    container_name: ttc-jaeger
+    ports:
+      - "16686:16686" # Jaeger Web UI
+      - "4317:4317"   # OTLP gRPC receiver
+      - "4318:4318"   # OTLP HTTP receiver
+    environment:
+      - COLLECTOR_OTLP_ENABLED=true
+    restart: unless-stopped
+    networks:
+      - ttc-mesh-net
+
+  # -------------------------------------------------------------
+  # CNCF Observability: Prometheus Metrics
+  # -------------------------------------------------------------
+  prometheus:
+    image: prom/prometheus:v2.53.0
+    container_name: ttc-prometheus
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    ports:
+      - "9090:9090"
+    restart: unless-stopped
+    networks:
+      - ttc-mesh-net
+
+  # -------------------------------------------------------------
+  # CNCF Observability: Grafana Visualization
+  # -------------------------------------------------------------
+  grafana:
+    image: grafana/grafana:10.4.5
+    container_name: ttc-grafana
+    environment:
+      - GF_SECURITY_ADMIN_USER=theinfraguy
+      - GF_SECURITY_ADMIN_PASSWORD=theinfraguy
+      - GF_USERS_ALLOW_SIGN_UP=false
+    volumes:
+      - ./grafana/provisioning/datasources:/etc/grafana/provisioning/datasources:ro
+      - ./grafana/provisioning/dashboards:/etc/grafana/provisioning/dashboards:ro
+    ports:
+      - "3000:3000"
+    restart: unless-stopped
+    depends_on:
+      - prometheus
+      - jaeger
+    networks:
+      - ttc-mesh-net
+
+  # -------------------------------------------------------------
+  # CNCF Observability: Loki Log Aggregation
+  # -------------------------------------------------------------
+  loki:
+    image: grafana/loki:3.0.0
+    container_name: ttc-loki
+    volumes:
+      - ./loki/loki-config.yml:/etc/loki/local-config.yaml:ro
+    ports:
+      - "3100:3100"
+    restart: unless-stopped
+    networks:
+      - ttc-mesh-net
+
+networks:
+  ttc-mesh-net:
+    driver: bridge

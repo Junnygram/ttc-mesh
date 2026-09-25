@@ -1,0 +1,77 @@
+name: TTC-Mesh-Istio-Pattern
+services:
+  ttc-gateway:
+    name: ttc-gateway
+    type: Gateway
+    namespace: ttc-mesh
+    settings:
+      servers:
+        - port:
+            number: 80
+            name: http
+            protocol: HTTP
+          hosts:
+            - "transit.toronto.local"
+
+  ttc-virtual-service:
+    name: ttc-virtual-service
+    type: VirtualService
+    namespace: ttc-mesh
+    settings:
+      hosts:
+        - "transit.toronto.local"
+      gateways:
+        - ttc-gateway
+      http:
+        - match:
+            - uri:
+                prefix: /api/transit
+          route:
+            - destination:
+                host: ttc-api.ttc-mesh.svc.cluster.local
+                port:
+                  number: 8000
+                subset: v1
+              weight: 90
+            - destination:
+                host: ttc-api.ttc-mesh.svc.cluster.local
+                port:
+                  number: 8000
+                subset: v2-canary
+              weight: 10
+          retries:
+            attempts: 3
+            perTryTimeout: 2s
+            retryOn: "5xx,connect-failure,refused-stream"
+
+  ttc-destination-rule:
+    name: ttc-destination-rule
+    type: DestinationRule
+    namespace: ttc-mesh
+    settings:
+      host: ttc-api.ttc-mesh.svc.cluster.local
+      trafficPolicy:
+        tls:
+          mode: ISTIO_MUTUAL
+        loadBalancer:
+          simple: ROUND_ROBIN
+      subsets:
+        - name: v1
+          labels:
+            version: v1
+        - name: v2-canary
+          labels:
+            version: v2-canary
+
+  ttc-telemetry:
+    name: ttc-telemetry
+    type: Telemetry
+    namespace: ttc-mesh
+    settings:
+      metrics:
+        - providers:
+            - name: prometheus
+          overrides:
+            - match:
+                metric: REQUEST_COUNT
+                mode: CLIENT_AND_SERVER
