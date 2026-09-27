@@ -12,7 +12,6 @@ from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor
 from opentelemetry.sdk.resources import Resource
 from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
-from opentelemetry.instrumentation.redis import RedisInstrumentor
 from opentelemetry.instrumentation.requests import RequestsInstrumentor
 
 REDIS_HOST = os.getenv("REDIS_HOST", "redis")
@@ -32,8 +31,9 @@ except Exception as e:
 trace.set_tracer_provider(provider)
 tracer = trace.get_tracer("ttc-collector")
 
-# Auto-instrument Redis and Requests
-RedisInstrumentor().instrument()
+# Auto-instrument outbound HTTP. Redis pipelines are traced by the
+# redis_pipeline_cache span; instrumenting every HSET would name one span
+# after all 1,500 commands.
 RequestsInstrumentor().instrument()
 
 # Prometheus Metrics
@@ -42,6 +42,12 @@ SYNC_DURATION_HISTOGRAM = Histogram("ttc_collector_sync_duration_seconds", "Dura
 SYNC_ERRORS_COUNTER = Counter("ttc_collector_sync_errors_total", "Total sync errors from TTC API")
 VEHICLES_SYNCED_COUNTER = Counter("ttc_vehicles_synced_total", "Cumulative number of vehicle records processed")
 AVG_SPEED_GAUGE = Gauge("ttc_fleet_avg_speed_kmh", "Average current speed of the active TTC surface fleet")
+MOVING_VEHICLES_GAUGE = Gauge("ttc_vehicles_moving", "Vehicles currently reporting a non-zero speed")
+LAST_SYNC_GAUGE = Gauge("ttc_collector_last_sync_duration_seconds", "Duration of the most recent GTFS-RT sync")
+
+# Route gauges stay bounded by the number of routes. Per-vehicle series do not.
+ROUTE_VEHICLES_GAUGE = Gauge("ttc_route_active_vehicles", "Active vehicles per TTC route", ["route", "mode"])
+ROUTE_SPEED_GAUGE = Gauge("ttc_route_avg_speed_kmh", "Average speed per TTC route in km/h", ["route", "mode"])
 
 r = redis.Redis(host=REDIS_HOST, port=REDIS_PORT, decode_responses=True)
 
@@ -107,11 +113,16 @@ def fetch_and_store_ttc_vehicles():
             # 3. Cache in Redis Pipeline
             with tracer.start_as_current_span("redis_pipeline_cache") as redis_span:
                 pipeline = r.pipeline()
+                pipeline.delete("ttc:vehicles:next")
                 
                 for entity in feed.entity:
                     if entity.HasField("vehicle"):
                         v = entity.vehicle
-                        speed = round(v.position.speed, 2) if v.position.HasField("speed") else 0.0
+                        # GTFS-RT speed is meters per second. Store km/h so the map and
+                        # ttc_fleet_avg_speed_kmh describe the same thing.
+                        speed_mps = v.position.speed if v.position.HasField("speed") else 0.0
+                        speed = round(speed_mps * 3.6, 1)
+                        bearing = round(v.position.bearing, 1) if v.position.HasField("bearing") else 0.0
                         if speed > 0:
                             total_speed += speed
                             speed_count += 1
@@ -124,12 +135,15 @@ def fetch_and_store_ttc_vehicles():
                             "lat": round(v.position.latitude, 5) if v.position.HasField("latitude") else 0.0,
                             "lon": round(v.position.longitude, 5) if v.position.HasField("longitude") else 0.0,
                             "speed": speed,
+                            "bearing": bearing,
                             "timestamp": v.timestamp
                         }
-                        pipeline.hset("ttc:vehicles", vehicle_data["id"], json.dumps(vehicle_data))
+                        pipeline.hset("ttc:vehicles:next", vehicle_data["id"], json.dumps(vehicle_data))
                         total_vehicles += 1
                         all_vehicles.append(vehicle_data)
                         
+                if total_vehicles:
+                    pipeline.rename("ttc:vehicles:next", "ttc:vehicles")
                 pipeline.set("ttc:last_updated", time.time())
                 pipeline.set("ttc:total_count", total_vehicles)
                 pipeline.set("ttc:avg_speed", round(total_speed / max(speed_count, 1), 1))
@@ -139,7 +153,7 @@ def fetch_and_store_ttc_vehicles():
                 redis_span.set_attribute("redis.stalled_vehicles", stalled_count)
 
             # Prioritize moving vehicles in the broadcast so motion is obvious
-            broadcast_vehicles = sorted(all_vehicles, key=lambda x: x["speed"], reverse=True)[:600]
+            broadcast_vehicles = all_vehicles
 
             # 4. Publish Event for WebSockets
             with tracer.start_as_current_span("pubsub_broadcast") as pub_span:
@@ -149,6 +163,7 @@ def fetch_and_store_ttc_vehicles():
                     "moving_vehicles": speed_count,
                     "avg_speed": round(total_speed / max(speed_count, 1), 1),
                     "timestamp": time.time(),
+                    "full": True,
                     "trace_id": format(root_span.get_span_context().trace_id, "032x"),
                     "vehicles": broadcast_vehicles
                 }
@@ -165,15 +180,49 @@ def fetch_and_store_ttc_vehicles():
 
             # Update Prometheus metrics
             ACTIVE_VEHICLES_GAUGE.labels(route_type="surface").set(total_vehicles)
+            MOVING_VEHICLES_GAUGE.set(speed_count)
             VEHICLES_SYNCED_COUNTER.inc(total_vehicles)
             if speed_count > 0:
                 AVG_SPEED_GAUGE.set(round(total_speed / speed_count, 2))
+
+            ROUTE_VEHICLES_GAUGE.clear()
+            ROUTE_SPEED_GAUGE.clear()
+
+            route_counts = {}
+            route_speeds = {}
+
+            for v in all_vehicles:
+                r_id = str(v.get("route", "Unknown"))
+                mode = "bus"
+                try:
+                    r_num = int(r_id)
+                    if (501 <= r_num <= 514) or r_num in [301, 304, 306, 310]:
+                        mode = "streetcar"
+                    elif 900 <= r_num <= 999:
+                        mode = "express"
+                except (ValueError, TypeError):
+                    pass
+
+                key = (r_id, mode)
+                route_counts[key] = route_counts.get(key, 0) + 1
+                if v.get("speed", 0) > 0:
+                    route_speeds.setdefault(key, []).append(v["speed"])
+
+            for (r_id, mode), count in route_counts.items():
+                ROUTE_VEHICLES_GAUGE.labels(route=r_id, mode=mode).set(count)
+                speeds = route_speeds.get((r_id, mode), [])
+                avg_s = round(sum(speeds) / len(speeds), 1) if speeds else 0.0
+                ROUTE_SPEED_GAUGE.labels(route=r_id, mode=mode).set(avg_s)
                 
             duration = time.time() - start_time
-            SYNC_DURATION_HISTOGRAM.observe(duration)
+            LAST_SYNC_GAUGE.set(duration)
+            trace_id_str = format(root_span.get_span_context().trace_id, "032x")
+            if trace_id_str and set(trace_id_str) != {"0"}:
+                SYNC_DURATION_HISTOGRAM.observe(duration, exemplar={"trace_id": trace_id_str})
+            else:
+                SYNC_DURATION_HISTOGRAM.observe(duration)
             root_span.set_attribute("sync.duration_seconds", duration)
             root_span.set_attribute("sync.vehicles_count", total_vehicles)
-            trace_id_str = format(root_span.get_span_context().trace_id, "032x")
             sync_log = f"Synced {total_vehicles} vehicles ({speed_count} moving) in {duration:.2f}s"
             print(f"[{time.strftime('%X')}] {sync_log} (Trace ID: {trace_id_str[:8]}...)")
             push_to_loki(sync_log, trace_id_str, level="info")

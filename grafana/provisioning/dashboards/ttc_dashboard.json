@@ -143,13 +143,14 @@
         {
           "datasource": { "type": "prometheus", "uid": "Prometheus" },
           "editorMode": "code",
-          "expr": "rate(ttc_collector_sync_duration_seconds_sum[1m]) / rate(ttc_collector_sync_duration_seconds_count[1m])",
+          "expr": "ttc_collector_last_sync_duration_seconds",
           "legendFormat": "Sync Latency",
           "range": true,
           "refId": "A"
         }
       ],
-      "title": "GTFS-RT Polling Latency",
+      "title": "Last GTFS-RT sync",
+      "description": "Wall time of the newest collector cycle. The chart below carries the exemplar that opens the Tempo trace.",
       "type": "stat"
     },
     {
@@ -280,7 +281,7 @@
             "mode": "absolute",
             "steps": [{ "color": "green", "value": null }]
           },
-          "unit": "reqps"
+          "unit": "s"
         },
         "overrides": []
       },
@@ -294,13 +295,15 @@
         {
           "datasource": { "type": "prometheus", "uid": "Prometheus" },
           "editorMode": "code",
-          "expr": "sum(rate(http_requests_total[1m]))",
-          "legendFormat": "API Requests/sec",
+          "expr": "histogram_quantile(0.99, sum by (le) (rate(ttc_collector_sync_duration_seconds_bucket[2m])))",
+          "exemplar": true,
+          "legendFormat": "p99 sync",
           "range": true,
           "refId": "A"
         }
       ],
-      "title": "FastAPI Throughput (Requests/sec)",
+      "title": "Sync latency p99 — click an exemplar",
+      "description": "Each diamond is one collector cycle. Click it to open the Tempo trace, then Logs for this span. That log line carries the same trace_id.",
       "type": "timeseries"
     },
     {
@@ -321,19 +324,30 @@
         {
           "datasource": { "type": "loki", "uid": "Loki" },
           "editorMode": "code",
-          "expr": "{app=~\"ttc-.*\"}",
+          "expr": "{service_name=~\"ttc-api|ttc-collector\"}",
           "queryType": "range",
           "refId": "A"
         }
       ],
-      "title": "Live Transit Telemetry & Collector Logs (Loki)",
+      "title": "Loki — trace_id opens the Tempo trace",
+      "description": "Click the trace id on a line. It is the same id as the exemplar on the latency chart and the trace in Tempo.",
       "type": "logs"
     }
   ],
   "refresh": "5s",
   "schemaVersion": 38,
   "style": "dark",
-  "tags": ["ttc", "cloud-native", "meshery", "docker"],
+  "tags": ["ttc", "lgtm", "tempo", "loki", "prometheus"],
+  "links": [
+    {
+      "icon": "compass",
+      "keepTime": true,
+      "targetBlank": true,
+      "title": "Tempo: collector traces",
+      "type": "link",
+      "url": "/explore?orgId=1&left=%7B%22datasource%22:%22Tempo%22,%22queries%22:%5B%7B%22refId%22:%22A%22,%22queryType%22:%22traceql%22,%22query%22:%22%7Bresource.service.name%3D%5C%22ttc-collector%5C%22%7D%22%7D%5D%7D"
+    }
+  ],
   "time": { "from": "now-15m", "to": "now" },
   "timepicker": {},
   "timezone": "browser",

@@ -1,0 +1,981 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TTC</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@500;600;700;800&display=swap" rel="stylesheet">
+    <link href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" rel="stylesheet">
+    <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
+    <style>
+        :root {
+            --ink: #111113;
+            --sheet: #1C1C1E;
+            --raised: #2C2C2E;
+            --muted: #A1A1A6;
+            --line: rgba(255,255,255,0.08);
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        html, body { height: 100%; background: #141416; color: #fff; font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; overflow: hidden; }
+        #map { position: fixed; inset: 0; background: #1B1B1D; }
+        button, input { font-family: inherit; }
+        button { cursor: pointer; }
+
+        .top {
+            position: fixed;
+            top: 14px;
+            left: 14px;
+            z-index: 20;
+            width: min(420px, calc(100vw - 28px));
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+        .where {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            background: #fff;
+            color: var(--ink);
+            border-radius: 16px;
+            padding: 8px;
+            box-shadow: 0 10px 28px rgba(0,0,0,0.28);
+        }
+        .mark {
+            width: 40px;
+            height: 40px;
+            border-radius: 12px;
+            background: #111;
+            color: #fff;
+            font-size: 12px;
+            font-weight: 800;
+            letter-spacing: -0.4px;
+            display: grid;
+            place-items: center;
+            flex-shrink: 0;
+        }
+        .where input {
+            flex: 1;
+            border: 0;
+            outline: none;
+            background: transparent;
+            font-size: 16px;
+            font-weight: 650;
+            color: #111;
+            min-width: 0;
+        }
+        .where input::placeholder { color: #8E8E93; font-weight: 550; }
+        .icon-btn {
+            width: 36px;
+            height: 36px;
+            border: 0;
+            border-radius: 11px;
+            background: #F2F2F7;
+            color: #111;
+            font-size: 16px;
+            flex-shrink: 0;
+        }
+        .icon-btn:hover { background: #E5E5EA; }
+        .chips { display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none; padding-bottom: 2px; }
+        .chips::-webkit-scrollbar { display: none; }
+        .chip {
+            border: 0;
+            background: rgba(28,28,30,0.92);
+            color: #fff;
+            border-radius: 999px;
+            padding: 8px 12px;
+            font-size: 13px;
+            font-weight: 650;
+            white-space: nowrap;
+            box-shadow: 0 6px 16px rgba(0,0,0,0.25);
+        }
+        .chip.on { background: #fff; color: #111; }
+        .hint {
+            display: none;
+            background: rgba(28,28,30,0.92);
+            color: #fff;
+            border-radius: 12px;
+            padding: 8px 12px;
+            font-size: 13px;
+            font-weight: 600;
+            box-shadow: 0 6px 16px rgba(0,0,0,0.25);
+        }
+
+        .menu {
+            display: none;
+            position: absolute;
+            top: 58px;
+            left: 0;
+            width: min(280px, calc(100vw - 28px));
+            background: #1C1C1E;
+            border-radius: 16px;
+            padding: 6px;
+            box-shadow: 0 16px 40px rgba(0,0,0,0.45);
+        }
+        .menu.open { display: block; }
+        .menu-label {
+            padding: 10px 12px 4px;
+            font-size: 11px;
+            font-weight: 700;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            color: #8E8E93;
+        }
+        .menu a, .menu button.row {
+            display: flex;
+            flex-direction: column;
+            align-items: flex-start;
+            width: 100%;
+            text-align: left;
+            text-decoration: none;
+            color: #fff;
+            background: transparent;
+            border: 0;
+            border-radius: 10px;
+            padding: 10px 12px;
+            font-size: 14px;
+            font-weight: 600;
+        }
+        .menu a:hover, .menu button.row:hover { background: rgba(255,255,255,0.06); }
+        .menu .sub { display: block; font-size: 12px; font-weight: 500; color: #8E8E93; margin-top: 2px; }
+
+        .sheet, .ride {
+            position: fixed;
+            left: 50%;
+            bottom: 16px;
+            transform: translateX(-50%);
+            width: min(440px, calc(100vw - 24px));
+            z-index: 20;
+            background: var(--sheet);
+            border-radius: 22px;
+            padding: 14px 16px 16px;
+            box-shadow: 0 16px 50px rgba(0,0,0,0.45);
+        }
+        .ride { display: none; }
+        .grab {
+            width: 36px;
+            height: 4px;
+            border-radius: 99px;
+            background: rgba(255,255,255,0.22);
+            margin: 0 auto 12px;
+        }
+        .sheet-head, .ride-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
+        .count { font-size: 40px; font-weight: 800; letter-spacing: -1.4px; line-height: 1; }
+        .count-label { margin-top: 4px; color: var(--muted); font-size: 14px; font-weight: 550; }
+        .live {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            background: rgba(48, 209, 88, 0.14);
+            color: #30D158;
+            border-radius: 999px;
+            padding: 6px 10px;
+            font-size: 12px;
+            font-weight: 750;
+            letter-spacing: 0.04em;
+        }
+        .live.off { background: rgba(255,69,58,0.14); color: #FF453A; }
+        .dot { width: 7px; height: 7px; border-radius: 50%; background: currentColor; box-shadow: 0 0 8px currentColor; }
+        .stats { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 14px 0; }
+        .stat { background: var(--raised); border-radius: 14px; padding: 12px; }
+        .stat b { display: block; font-size: 18px; font-weight: 750; letter-spacing: -0.3px; }
+        .stat span { display: block; margin-top: 3px; color: var(--muted); font-size: 12px; font-weight: 600; }
+        .filters { display: flex; gap: 6px; margin-bottom: 12px; overflow-x: auto; scrollbar-width: none; }
+        .filters::-webkit-scrollbar { display: none; }
+        .filter {
+            border: 0;
+            background: var(--raised);
+            color: #fff;
+            border-radius: 999px;
+            padding: 8px 12px;
+            font-size: 13px;
+            font-weight: 650;
+            white-space: nowrap;
+        }
+        .filter.on { background: #fff; color: #111; }
+        .cta {
+            width: 100%;
+            height: 50px;
+            border: 0;
+            border-radius: 14px;
+            background: #fff;
+            color: #111;
+            font-size: 16px;
+            font-weight: 750;
+        }
+        .cta:hover { background: #F2F2F7; }
+        .cta:disabled { opacity: 0.45; cursor: default; }
+        .ride-title { font-size: 22px; font-weight: 800; letter-spacing: -0.4px; }
+        .ride-sub { margin-top: 4px; color: var(--muted); font-size: 13px; font-weight: 600; }
+        .close {
+            width: 32px;
+            height: 32px;
+            border: 0;
+            border-radius: 50%;
+            background: var(--raised);
+            color: #fff;
+            font-size: 14px;
+        }
+
+        .recenter {
+            position: fixed;
+            left: 50%;
+            bottom: 248px;
+            transform: translateX(-50%);
+            z-index: 25;
+            border: 0;
+            background: #fff;
+            color: #111;
+            border-radius: 999px;
+            padding: 10px 16px;
+            font-weight: 750;
+            font-size: 14px;
+            box-shadow: 0 8px 24px rgba(0,0,0,0.35);
+        }
+
+        .waiting {
+            position: fixed;
+            left: 50%;
+            top: 46%;
+            transform: translate(-50%, -50%);
+            z-index: 15;
+            background: rgba(28,28,30,0.92);
+            color: #fff;
+            border-radius: 999px;
+            padding: 10px 16px;
+            font-size: 14px;
+            font-weight: 650;
+            box-shadow: 0 8px 24px rgba(0,0,0,0.35);
+            pointer-events: none;
+        }
+
+        .maplibregl-ctrl-logo { display: none !important; }
+        .maplibregl-ctrl-bottom-left { bottom: 210px !important; left: 10px !important; }
+        .maplibregl-ctrl-bottom-right { bottom: 210px !important; right: 10px !important; }
+        .maplibregl-ctrl-attrib { background: rgba(0,0,0,0.45) !important; color: #c7c7cc !important; font-size: 10px !important; }
+        .maplibregl-ctrl-attrib a { color: #fff !important; }
+        .maplibregl-ctrl-group { background: #1C1C1E !important; border-radius: 12px !important; overflow: hidden; box-shadow: 0 8px 20px rgba(0,0,0,0.35) !important; }
+        .maplibregl-ctrl-group button { filter: invert(1); }
+        .maplibregl-ctrl-group button + button { border-top: 1px solid rgba(255,255,255,0.12) !important; }
+    </style>
+</head>
+<body>
+    <div id="map"></div>
+
+    <div class="top">
+        <div class="where">
+            <div class="mark">TTC</div>
+            <input id="search" type="text" placeholder="Where to?" autocomplete="off" spellcheck="false">
+            <button id="clear" class="icon-btn" type="button" hidden aria-label="Clear">✕</button>
+            <button id="menu-btn" class="icon-btn" type="button" aria-label="Menu">☰</button>
+        </div>
+        <div class="chips" id="chips">
+            <button class="chip" type="button" data-route="504">504 King</button>
+            <button class="chip" type="button" data-route="501">501 Queen</button>
+            <button class="chip" type="button" data-route="510">510 Spadina</button>
+            <button class="chip" type="button" data-route="506">506 Carlton</button>
+            <button class="chip" type="button" data-route="29">29 Dufferin</button>
+        </div>
+        <div id="hint" class="hint"></div>
+        <div id="menu" class="menu">
+            <div class="menu-label">Meshery</div>
+            <a href="http://localhost:9081" target="_blank" rel="noreferrer">Service mesh
+                <span class="sub">Kanvas, Istio, mTLS</span>
+            </a>
+            <div class="menu-label">LGTM stack</div>
+            <a href="http://localhost:3000/d/ttc-mesh-overview/toronto-transit-command-center-ttc-mesh" target="_blank" rel="noreferrer">Grafana
+                <span class="sub">LGTM board</span>
+            </a>
+            <a href="http://localhost:3000/explore" target="_blank" rel="noreferrer">Loki and Tempo
+                <span class="sub">Log line to trace, and back</span>
+            </a>
+            <a href="http://localhost:16686" target="_blank" rel="noreferrer">Jaeger
+                <span class="sub">Traces</span>
+            </a>
+            <a href="http://localhost:9090" target="_blank" rel="noreferrer">Prometheus
+                <span class="sub">Metrics</span>
+            </a>
+        </div>
+    </div>
+
+    <div class="sheet" id="sheet">
+        <div class="grab"></div>
+        <div class="sheet-head">
+            <div>
+                <div class="count" id="count">—</div>
+                <div class="count-label">vehicles on the road</div>
+            </div>
+            <div class="live off" id="live"><span class="dot"></span><span id="live-label">CONNECTING</span></div>
+        </div>
+        <div class="stats">
+            <div class="stat"><b id="moving">—</b><span>In motion</span></div>
+            <div class="stat"><b id="speed">—</b><span>Avg speed</span></div>
+        </div>
+        <div class="filters">
+            <button class="filter on" type="button" data-mode="all">All</button>
+            <button class="filter" type="button" data-mode="streetcar">Streetcar</button>
+            <button class="filter" type="button" data-mode="express">Express</button>
+            <button class="filter" type="button" data-mode="bus">Bus</button>
+        </div>
+        <button class="cta" id="follow-btn" type="button">Follow a bus</button>
+    </div>
+
+    <div class="ride" id="ride">
+        <div class="grab"></div>
+        <div class="ride-head">
+            <div>
+                <div class="ride-title" id="ride-title">—</div>
+                <div class="ride-sub" id="ride-sub">Live</div>
+            </div>
+            <button class="close" id="ride-close" type="button" aria-label="Stop following">✕</button>
+        </div>
+        <div class="stats">
+            <div class="stat"><b id="ride-speed">—</b><span>Speed</span></div>
+            <div class="stat"><b id="ride-head">—</b><span>Heading</span></div>
+        </div>
+    </div>
+
+    <button id="recenter" class="recenter" type="button" hidden>Re-center</button>
+    <div id="waiting" class="waiting">Connecting to live TTC vehicles…</div>
+
+    <script>
+        const HERO = { center: [-79.3905, 43.6474], zoom: 15.2, pitch: 45, bearing: 28 };
+        const FOLLOW_ZOOM = 16.75;
+        const ROUTE_NAMES = {
+            "501": "Queen", "502": "Downtowner", "503": "Kingston Rd", "504": "King",
+            "505": "Dundas", "506": "Carlton", "509": "Harbourfront", "510": "Spadina",
+            "511": "Bathurst", "512": "St Clair", "29": "Dufferin", "35": "Jane",
+            "36": "Finch West", "7": "Bathurst", "6": "Bay", "960": "Steeles Express",
+            "939": "Finch Express", "52": "Lawrence West", "96": "Wilson"
+        };
+
+        const fleet = new Map();
+        const collection = { type: "FeatureCollection", features: [] };
+        let dirty = true;
+        let mapLoaded = false;
+        let followId = null;
+        let userTookCamera = false;
+        let cameraSettled = false;
+        let lastCam = 0;
+        let lastHud = 0;
+        let filterMode = "all";
+        let query = "";
+        let activeCount = 0;
+        let movingCount = 0;
+        let avgSpeed = 0;
+
+        const uberStyle = {
+            version: 8,
+            name: "Uber Night",
+            glyphs: "https://tiles.openfreemap.org/fonts/{fontstack}/{range}.pbf",
+            sources: {
+                openmaptiles: {
+                    type: "vector",
+                    url: "https://tiles.openfreemap.org/planet",
+                    attribution: "© OpenStreetMap © OpenFreeMap"
+                }
+            },
+            layers: [
+                { id: "background", type: "background", paint: { "background-color": "#1A1C24" } },
+                { id: "water", type: "fill", source: "openmaptiles", "source-layer": "water", paint: { "fill-color": "#101826" } },
+                { id: "park", type: "fill", source: "openmaptiles", "source-layer": "landuse",
+                  filter: ["match", ["get", "class"], ["park", "cemetery", "grass"], true, false],
+                  paint: { "fill-color": "#1C3328" } },
+                { id: "wood", type: "fill", source: "openmaptiles", "source-layer": "landcover",
+                  filter: ["match", ["get", "class"], ["wood", "grass"], true, false],
+                  paint: { "fill-color": "#1C3328" } },
+                road("road-service", ["service"], "#4A5168", 2.6, 15),
+                road("road-minor", ["minor", "tertiary"], "#636B86", 4.2, 11),
+                road("road-secondary", ["secondary"], "#767E9C", 5.4, 10),
+                road("road-primary", ["primary", "trunk"], "#8E96B4", 7, 8),
+                road("road-motorway", ["motorway"], "#B4BCD4", 8.2, 6),
+                { id: "buildings", type: "fill-extrusion", source: "openmaptiles", "source-layer": "building", minzoom: 15.8,
+                  paint: {
+                      "fill-extrusion-color": "#2C3348",
+                      "fill-extrusion-height": ["case",
+                          [">", ["to-number", ["get", "render_height"]], 0], ["to-number", ["get", "render_height"]],
+                          [">", ["to-number", ["get", "height"]], 0], ["to-number", ["get", "height"]],
+                          14],
+                      "fill-extrusion-base": ["coalesce", ["to-number", ["get", "render_min_height"]], 0],
+                      "fill-extrusion-opacity": 0.9
+                  } },
+                { id: "road-label", type: "symbol", source: "openmaptiles", "source-layer": "transportation_name", minzoom: 14.2,
+                  filter: ["match", ["get", "class"], ["motorway", "trunk", "primary", "secondary", "tertiary"], true, false],
+                  layout: {
+                      "symbol-placement": "line",
+                      "text-field": ["coalesce", ["get", "name:latin"], ["get", "name"]],
+                      "text-font": ["Noto Sans Regular"],
+                      "text-size": 12,
+                      "text-letter-spacing": 0.04,
+                      "text-max-angle": 28
+                  },
+                  paint: { "text-color": "#F2F2F7", "text-halo-color": "#1A1C24", "text-halo-width": 1.5 } },
+                { id: "place-label", type: "symbol", source: "openmaptiles", "source-layer": "place", minzoom: 12,
+                  filter: ["match", ["get", "class"], ["neighbourhood", "suburb", "quarter"], true, false],
+                  layout: {
+                      "text-field": ["coalesce", ["get", "name:latin"], ["get", "name"]],
+                      "text-font": ["Noto Sans Regular"],
+                      "text-size": 13
+                  },
+                  paint: { "text-color": "#C7C7CC", "text-halo-color": "#1A1C24", "text-halo-width": 1.3 } }
+            ]
+        };
+
+        function road(id, classes, color, width, minzoom) {
+            return {
+                id: id,
+                type: "line",
+                source: "openmaptiles",
+                "source-layer": "transportation",
+                minzoom: minzoom,
+                filter: ["match", ["get", "class"], classes, true, false],
+                layout: { "line-cap": "round", "line-join": "round" },
+                paint: {
+                    "line-color": color,
+                    "line-width": ["interpolate", ["exponential", 1.4], ["zoom"], 10, width * 0.22, 13, width * 0.55, 15, width * 1.15, 17, width * 2.3, 19, width * 4]
+                }
+            };
+        }
+
+        function roundRect(ctx, x, y, w, h, r) {
+            ctx.beginPath();
+            ctx.moveTo(x + r, y);
+            ctx.arcTo(x + w, y, x + w, y + h, r);
+            ctx.arcTo(x + w, y + h, x, y + h, r);
+            ctx.arcTo(x, y + h, x, y, r);
+            ctx.arcTo(x, y, x + w, y, r);
+            ctx.closePath();
+        }
+
+        function vehicleCanvas(kind) {
+            const ratio = 2;
+            const w = 36;
+            const h = kind === "streetcar" ? 78 : 62;
+            const canvas = document.createElement("canvas");
+            canvas.width = w * ratio;
+            canvas.height = h * ratio;
+            const ctx = canvas.getContext("2d");
+            ctx.scale(ratio, ratio);
+            const body = kind === "stopped" ? "#636366" : "#F5F5F7";
+            ctx.save();
+            ctx.shadowColor = "rgba(0,0,0,0.55)";
+            ctx.shadowBlur = 8;
+            ctx.shadowOffsetY = 3;
+            roundRect(ctx, 7, 4, w - 14, h - 8, 8);
+            ctx.fillStyle = body;
+            ctx.fill();
+            ctx.restore();
+            roundRect(ctx, 11, 9, w - 22, 10, 2.5);
+            ctx.fillStyle = "#1C1C1E";
+            ctx.fill();
+            const stripe = kind === "streetcar" ? "#FF453A" : kind === "express" ? "#30D158" : "#D1D1D6";
+            if (kind !== "stopped") {
+                ctx.fillStyle = stripe;
+                ctx.globalAlpha = kind === "bus" ? 0.55 : 0.95;
+                ctx.fillRect(w / 2 - 1.6, 24, 3.2, h - 40);
+                ctx.globalAlpha = 1;
+                ctx.fillStyle = "#FFF6D0";
+                ctx.beginPath(); ctx.arc(12, 7.5, 1.7, 0, Math.PI * 2); ctx.fill();
+                ctx.beginPath(); ctx.arc(w - 12, 7.5, 1.7, 0, Math.PI * 2); ctx.fill();
+            }
+            ctx.fillStyle = "#FF453A";
+            ctx.fillRect(11, h - 11, 5, 2.4);
+            ctx.fillRect(w - 16, h - 11, 5, 2.4);
+            return canvas;
+        }
+
+        function classify(route) {
+            const n = parseInt(route, 10);
+            if ((n >= 501 && n <= 514) || [301, 304, 306, 310].includes(n)) return "streetcar";
+            if (n >= 900 && n <= 999) return "express";
+            return "bus";
+        }
+
+        function routeLabel(route) {
+            const name = ROUTE_NAMES[String(route)];
+            return name ? route + " " + name : "Route " + (route || "TTC");
+        }
+
+        function modeLabel(mode) {
+            if (mode === "streetcar") return "Streetcar";
+            if (mode === "express") return "Express bus";
+            return "Bus";
+        }
+
+        function inToronto(lat, lon) {
+            return lat > 43.55 && lat < 43.9 && lon > -79.7 && lon < -79.1;
+        }
+
+        function meters(lat1, lon1, lat2, lon2) {
+            const dLat = (lat2 - lat1) * 111139;
+            const dLon = (lon2 - lon1) * 111139 * Math.cos(lat1 * Math.PI / 180);
+            return Math.hypot(dLat, dLon);
+        }
+
+        function heading(lat1, lon1, lat2, lon2) {
+            if (meters(lat1, lon1, lat2, lon2) < 8) return null;
+            const dLat = lat2 - lat1;
+            const dLon = (lon2 - lon1) * Math.cos(lat1 * Math.PI / 180);
+            return (Math.atan2(dLon, dLat) * 180 / Math.PI + 360) % 360;
+        }
+
+        function compass(deg) {
+            const dirs = ["N", "NE", "E", "SE", "S", "SW", "W", "NW"];
+            return dirs[Math.round((((deg % 360) + 360) % 360) / 45) % 8];
+        }
+
+        function iconFor(s) {
+            if (!s.moving) return "veh-stopped";
+            if (s.mode === "streetcar") return "veh-streetcar";
+            if (s.mode === "express") return "veh-express";
+            return "veh-bus";
+        }
+
+        function isVisible(s) {
+            if (s.id === followId) return true;
+            if (filterMode !== "all" && s.mode !== filterMode) return false;
+            if (query) {
+                const r = (s.route || "").toLowerCase();
+                const q = query.toLowerCase();
+                if (!(r === q || r.startsWith(q))) return false;
+            }
+            if (s.id !== followId && !s.moving && mapLoaded && map.getZoom() < 15.6) return false;
+            return true;
+        }
+
+        function sample(s, now) {
+            const p = (now - s.t0) / s.dur;
+            if (p >= 1) return { lat: s.bLat, lon: s.bLon };
+            return {
+                lat: s.aLat + (s.bLat - s.aLat) * p,
+                lon: s.aLon + (s.bLon - s.aLon) * p
+            };
+        }
+
+        function ingest(list, full) {
+            const now = performance.now();
+            const seen = new Set();
+            for (const v of list || []) {
+                const lat = Number(v.lat);
+                const lon = Number(v.lon);
+                if (!v.id || !inToronto(lat, lon)) continue;
+                const id = String(v.id);
+                seen.add(id);
+                const speed = Number(v.speed) || 0;
+                const mode = classify(v.route);
+                let s = fleet.get(id);
+                if (!s) {
+                    s = {
+                        id: id,
+                        route: String(v.route || ""),
+                        mode: mode,
+                        speed: speed,
+                        moving: speed > 0,
+                        shownKmh: speed,
+                        lat: lat,
+                        lon: lon,
+                        bearing: Number(v.bearing) || 0,
+                        targetBearing: Number(v.bearing) || 0,
+                        aLat: lat, aLon: lon, bLat: lat, bLon: lon,
+                        t0: now, dur: 1,
+                        feature: {
+                            type: "Feature",
+                            properties: { id: id, route: String(v.route || ""), mode: mode, bearing: 0, icon: "veh-bus", show: 1 },
+                            geometry: { type: "Point", coordinates: [lon, lat] }
+                        }
+                    };
+                    fleet.set(id, s);
+                    dirty = true;
+                } else {
+                    const dist = meters(s.lat, s.lon, lat, lon);
+                    if (dist > 800) {
+                        s.aLat = lat; s.aLon = lon; s.bLat = lat; s.bLon = lon; s.lat = lat; s.lon = lon;
+                        s.t0 = now; s.dur = 1;
+                    } else if (dist > 2) {
+                        s.aLat = s.lat; s.aLon = s.lon;
+                        s.bLat = lat; s.bLon = lon;
+                        s.t0 = now; s.dur = 11000;
+                        const h = heading(s.aLat, s.aLon, lat, lon);
+                        if (h != null) s.targetBearing = h;
+                    } else if (v.bearing) {
+                        s.targetBearing = Number(v.bearing) || s.targetBearing;
+                    }
+                    s.speed = speed;
+                    s.moving = speed > 0 || (dist > 8 && dist < 800);
+                    if (dist > 2 && dist <= 800) {
+                        s.shownKmh = (dist / 11) * 3.6;
+                    } else if (speed <= 0) {
+                        s.shownKmh = 0;
+                    }
+                    s.route = String(v.route || s.route);
+                    s.mode = mode;
+                }
+            }
+            if (full) {
+                for (const id of fleet.keys()) {
+                    if (!seen.has(id)) {
+                        fleet.delete(id);
+                        dirty = true;
+                        if (id === followId) stopFollow(false);
+                    }
+                }
+            }
+            const waiting = document.getElementById("waiting");
+            if (fleet.size > 0) waiting.hidden = true;
+            paintSheet();
+        }
+
+        function tick(now) {
+            if (mapLoaded) {
+                const src = map.getSource("fleet");
+                if (src) {
+                    if (dirty) {
+                        collection.features = [];
+                        fleet.forEach(function (s) { collection.features.push(s.feature); });
+                        dirty = false;
+                    }
+                    fleet.forEach(function (s) {
+                        const pos = sample(s, now);
+                        s.lat = pos.lat;
+                        s.lon = pos.lon;
+                        let diff = ((s.targetBearing - s.bearing + 540) % 360) - 180;
+                        s.bearing = (s.bearing + diff * 0.16 + 360) % 360;
+                        const coords = s.feature.geometry.coordinates;
+                        coords[0] = s.lon;
+                        coords[1] = s.lat;
+                        s.feature.properties.bearing = s.bearing;
+                        s.feature.properties.icon = iconFor(s);
+                        s.feature.properties.mode = s.mode;
+                        s.feature.properties.show = isVisible(s) ? 1 : 0;
+                    });
+                    src.setData(collection);
+                    if (followId && !userTookCamera && cameraSettled && now - lastCam > 140) {
+                        const s = fleet.get(followId);
+                        if (s) {
+                            lastCam = now;
+                            map.easeTo({
+                                center: [s.lon, s.lat],
+                                bearing: s.bearing,
+                                pitch: 58,
+                                zoom: FOLLOW_ZOOM,
+                                duration: 280,
+                                easing: function (t) { return t; },
+                                essential: true
+                            });
+                        }
+                    }
+                    if (followId && now - lastHud > 280) {
+                        lastHud = now;
+                        const s = fleet.get(followId);
+                        if (s) paintRide(s);
+                    }
+                }
+            }
+            requestAnimationFrame(tick);
+        }
+
+        function paintSheet() {
+            document.getElementById("count").textContent = activeCount ? activeCount.toLocaleString() : (fleet.size ? fleet.size.toLocaleString() : "—");
+            document.getElementById("moving").textContent = movingCount ? movingCount.toLocaleString() : "—";
+            document.getElementById("speed").textContent = avgSpeed ? avgSpeed.toFixed(1) + " km/h" : "—";
+            const btn = document.getElementById("follow-btn");
+            if (filterMode === "streetcar") btn.textContent = "Follow a streetcar";
+            else if (filterMode === "express") btn.textContent = "Follow an express bus";
+            else btn.textContent = "Follow a bus";
+        }
+
+        function paintRide(s) {
+            document.getElementById("ride-title").textContent = routeLabel(s.route);
+            document.getElementById("ride-sub").textContent = modeLabel(s.mode) + " · Live";
+            document.getElementById("ride-speed").textContent = (s.shownKmh || 0).toFixed(0) + " km/h";
+            document.getElementById("ride-head").textContent = compass(s.bearing) + "  " + Math.round(s.bearing) + "°";
+        }
+
+        function applyStats(message) {
+            if (message.active_vehicles != null) activeCount = Number(message.active_vehicles) || 0;
+            if (message.moving_vehicles != null) movingCount = Number(message.moving_vehicles) || 0;
+            if (message.avg_speed != null) avgSpeed = Number(message.avg_speed) || 0;
+            paintSheet();
+        }
+
+        function matchesPool(s) {
+            if (filterMode !== "all" && s.mode !== filterMode) return false;
+            if (!query) return true;
+            const r = (s.route || "").toLowerCase();
+            const q = query.toLowerCase();
+            return r === q || r.startsWith(q);
+        }
+
+        function followNext() {
+            const bounds = mapLoaded ? map.getBounds() : null;
+            const pool = [];
+            const anywhere = [];
+            fleet.forEach(function (s) {
+                if (!s.moving || !matchesPool(s)) return;
+                if (!s.route || s.route === "Unknown") return;
+                anywhere.push(s);
+                if (!bounds || bounds.contains([s.lon, s.lat])) pool.push(s);
+            });
+            const choices = pool.length ? pool : anywhere;
+            if (!choices.length) {
+                showHint("No moving vehicles in this view yet");
+                return;
+            }
+            choices.sort(function (a, b) { return b.speed - a.speed; });
+            const idx = choices.findIndex(function (s) { return s.id === followId; });
+            startFollow(choices[(idx + 1) % choices.length].id);
+        }
+
+        function startFollow(id) {
+            const s = fleet.get(id);
+            if (!s) return;
+            followId = id;
+            userTookCamera = false;
+            cameraSettled = false;
+            document.getElementById("recenter").hidden = true;
+            document.getElementById("sheet").style.display = "none";
+            document.getElementById("ride").style.display = "block";
+            paintRide(s);
+            if (mapLoaded) {
+                map.setFilter("follow-halo", ["==", ["get", "id"], id]);
+                map.flyTo({
+                    center: [s.lon, s.lat],
+                    zoom: FOLLOW_ZOOM,
+                    bearing: s.bearing,
+                    pitch: 58,
+                    duration: 1500,
+                    essential: true
+                });
+            }
+        }
+
+        function stopFollow(flyHome) {
+            followId = null;
+            userTookCamera = false;
+            cameraSettled = false;
+            document.getElementById("recenter").hidden = true;
+            document.getElementById("ride").style.display = "none";
+            document.getElementById("sheet").style.display = "block";
+            if (mapLoaded) map.setFilter("follow-halo", ["==", ["get", "id"], ""]);
+            if (flyHome !== false && mapLoaded) {
+                if (query) fitQuery();
+                else map.flyTo(Object.assign({ duration: 1200, essential: true }, HERO));
+            }
+        }
+
+        function fitQuery() {
+            const bounds = new maplibregl.LngLatBounds();
+            let n = 0;
+            fleet.forEach(function (s) {
+                if (!matchesPool(s)) return;
+                bounds.extend([s.lon, s.lat]);
+                n++;
+            });
+            const hint = document.getElementById("hint");
+            if (!query) {
+                hint.style.display = "none";
+                return;
+            }
+            hint.style.display = "block";
+            hint.textContent = n ? n + " vehicles on " + query : "No vehicles on " + query;
+            if (n && mapLoaded && !followId) {
+                map.fitBounds(bounds, { padding: { top: 120, bottom: 260, left: 40, right: 40 }, maxZoom: 15.2, pitch: 48, duration: 900 });
+            }
+        }
+
+        function setQuery(value) {
+            query = (value || "").trim();
+            document.getElementById("search").value = query;
+            document.getElementById("clear").hidden = !query;
+            document.querySelectorAll(".chip").forEach(function (chip) {
+                chip.classList.toggle("on", chip.dataset.route === query);
+            });
+            if (followId) stopFollow(false);
+            if (!query) {
+                document.getElementById("hint").style.display = "none";
+                if (mapLoaded) map.flyTo(Object.assign({ duration: 900, essential: true }, HERO));
+                return;
+            }
+            fitQuery();
+        }
+
+        function setLive(on) {
+            const el = document.getElementById("live");
+            el.classList.toggle("off", !on);
+            document.getElementById("live-label").textContent = on ? "LIVE" : "CONNECTING";
+        }
+
+        function showHint(text) {
+            const hint = document.getElementById("hint");
+            hint.style.display = "block";
+            hint.textContent = text;
+            clearTimeout(showHint._t);
+            showHint._t = setTimeout(function () {
+                if (!query) hint.style.display = "none";
+            }, 2400);
+        }
+
+        const map = new maplibregl.Map({
+            container: "map",
+            style: uberStyle,
+            center: HERO.center,
+            zoom: HERO.zoom,
+            pitch: HERO.pitch,
+            bearing: HERO.bearing,
+            maxPitch: 68,
+            attributionControl: true,
+            fadeDuration: 0
+        });
+        map.addControl(new maplibregl.NavigationControl({ showCompass: false, visualizePitch: false }), "bottom-right");
+
+        function bootFleet() {
+            if (map.getLayer("vehicles")) return;
+            map.setPadding({ top: 96, bottom: 230, left: 16, right: 16 });
+            map.setLight({ anchor: "viewport", color: "#ffffff", intensity: 0.65, position: [1.2, 160, 45] });
+            ["bus", "streetcar", "express", "stopped"].forEach(function (kind) {
+                const canvas = vehicleCanvas(kind);
+                const image = canvas.getContext("2d").getImageData(0, 0, canvas.width, canvas.height);
+                map.addImage("veh-" + kind, image, { pixelRatio: 2 });
+            });
+            map.addSource("fleet", { type: "geojson", data: collection });
+            map.addLayer({
+                id: "follow-halo",
+                type: "circle",
+                source: "fleet",
+                filter: ["==", ["get", "id"], ""],
+                paint: {
+                    "circle-radius": 22,
+                    "circle-color": "rgba(255,255,255,0.14)",
+                    "circle-stroke-width": 2,
+                    "circle-stroke-color": "#ffffff",
+                    "circle-pitch-alignment": "viewport",
+                    "circle-pitch-scale": "viewport"
+                }
+            });
+            map.addLayer({
+                id: "vehicles",
+                type: "symbol",
+                source: "fleet",
+                filter: ["==", ["get", "show"], 1],
+                layout: {
+                    "icon-image": ["get", "icon"],
+                    "icon-size": ["interpolate", ["linear"], ["zoom"], 12, 0.42, 14.5, 0.68, 16.6, 1, 18, 1.2],
+                    "icon-rotate": ["get", "bearing"],
+                    "icon-rotation-alignment": "map",
+                    "icon-pitch-alignment": "viewport",
+                    "icon-allow-overlap": true,
+                    "icon-ignore-placement": true
+                }
+            });
+            map.on("click", "vehicles", function (e) {
+                const id = e.features && e.features[0] && e.features[0].properties.id;
+                if (id) startFollow(String(id));
+            });
+            map.on("mouseenter", "vehicles", function () { map.getCanvas().style.cursor = "pointer"; });
+            map.on("mouseleave", "vehicles", function () { map.getCanvas().style.cursor = ""; });
+            mapLoaded = true;
+        }
+        map.on("load", bootFleet);
+        if (map.isStyleLoaded()) bootFleet();
+
+        function onUserMove(e) {
+            if (e.originalEvent && followId) {
+                userTookCamera = true;
+                cameraSettled = false;
+                document.getElementById("recenter").hidden = false;
+            }
+        }
+        map.on("dragstart", onUserMove);
+        map.on("zoomstart", onUserMove);
+        map.on("rotatestart", onUserMove);
+        map.on("pitchstart", onUserMove);
+        map.on("moveend", function () {
+            if (followId && !userTookCamera) cameraSettled = true;
+        });
+        map.on("error", function (e) {
+            console.error(e && e.error ? e.error : e);
+        });
+
+        document.getElementById("follow-btn").addEventListener("click", followNext);
+        document.getElementById("ride-close").addEventListener("click", function () { stopFollow(true); });
+        document.getElementById("recenter").addEventListener("click", function () {
+            if (!followId) return;
+            userTookCamera = false;
+            cameraSettled = false;
+            document.getElementById("recenter").hidden = true;
+            const s = fleet.get(followId);
+            if (s) {
+                map.flyTo({ center: [s.lon, s.lat], zoom: FOLLOW_ZOOM, bearing: s.bearing, pitch: 58, duration: 700, essential: true });
+            }
+        });
+        document.getElementById("search").addEventListener("input", function (e) { setQuery(e.target.value); });
+        document.getElementById("search").addEventListener("keydown", function (e) {
+            if (e.key === "Enter") followNext();
+        });
+        document.getElementById("clear").addEventListener("click", function () { setQuery(""); });
+        document.getElementById("chips").addEventListener("click", function (e) {
+            const btn = e.target.closest(".chip");
+            if (!btn) return;
+            setQuery(query === btn.dataset.route ? "" : btn.dataset.route);
+        });
+        document.querySelectorAll(".filter").forEach(function (btn) {
+            btn.addEventListener("click", function () {
+                filterMode = btn.dataset.mode;
+                document.querySelectorAll(".filter").forEach(function (el) { el.classList.toggle("on", el === btn); });
+                paintSheet();
+            });
+        });
+        const menu = document.getElementById("menu");
+        document.getElementById("menu-btn").addEventListener("click", function (e) {
+            e.stopPropagation();
+            menu.classList.toggle("open");
+        });
+        document.addEventListener("click", function (e) {
+            if (!menu.contains(e.target)) menu.classList.remove("open");
+        });
+        document.addEventListener("keydown", function (e) {
+            if (e.key === "Escape") {
+                menu.classList.remove("open");
+                if (followId) stopFollow(true);
+            }
+        });
+
+        function loadSnapshot() {
+            fetch("/api/transit/vehicles?limit=3000")
+                .then(function (res) { return res.json(); })
+                .then(function (data) { ingest(data.vehicles || [], true); })
+                .catch(function () {});
+            fetch("/api/transit/stats")
+                .then(function (res) { return res.json(); })
+                .then(applyStats)
+                .catch(function () {});
+        }
+
+        function connect() {
+            const proto = location.protocol === "https:" ? "wss:" : "ws:";
+            const socket = new WebSocket(proto + "//" + location.host + "/ws/transit");
+            socket.onopen = function () {
+                setLive(true);
+                loadSnapshot();
+            };
+            socket.onmessage = function (event) {
+                let message;
+                try { message = JSON.parse(event.data); } catch (err) { return; }
+                applyStats(message);
+                if (message.vehicles && message.vehicles.length) {
+                    const full = message.full === true || (message.active_vehicles && message.vehicles.length >= message.active_vehicles * 0.9);
+                    ingest(message.vehicles, full);
+                }
+            };
+            socket.onclose = function () {
+                setLive(false);
+                setTimeout(connect, 2000);
+            };
+        }
+
+        requestAnimationFrame(tick);
+        connect();
+    </script>
+</body>
+</html>

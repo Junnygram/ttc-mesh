@@ -30,13 +30,14 @@ services:
       - REDIS_HOST=redis
       - REDIS_PORT=6379
       - METRICS_PORT=8001
-      - OTEL_EXPORTER_OTLP_ENDPOINT=http://jaeger:4317
+      - PYTHONUNBUFFERED=1
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4317
     ports:
       - "8001:8001"
     depends_on:
       redis:
         condition: service_healthy
-      jaeger:
+      otel-collector:
         condition: service_started
     networks:
       - ttc-mesh-net
@@ -52,12 +53,14 @@ services:
     environment:
       - REDIS_HOST=redis
       - REDIS_PORT=6379
-      - OTEL_EXPORTER_OTLP_ENDPOINT=http://jaeger:4317
+      - PYTHONUNBUFFERED=1
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4317
       - JAEGER_PUBLIC_URL=http://localhost:16686
+      - GOOGLE_MAPS_API_KEY=${GOOGLE_MAPS_API_KEY:-}
     depends_on:
       redis:
         condition: service_healthy
-      jaeger:
+      otel-collector:
         condition: service_started
     networks:
       - ttc-mesh-net
@@ -70,8 +73,6 @@ services:
     container_name: ttc-jaeger
     ports:
       - "16686:16686" # Jaeger Web UI
-      - "4317:4317"   # OTLP gRPC receiver
-      - "4318:4318"   # OTLP HTTP receiver
     environment:
       - COLLECTOR_OTLP_ENABLED=true
     restart: unless-stopped
@@ -84,6 +85,11 @@ services:
   prometheus:
     image: prom/prometheus:v2.53.0
     container_name: ttc-prometheus
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--web.enable-remote-write-receiver"
+      - "--enable-feature=exemplar-storage"
+      - "--storage.tsdb.path=/prometheus"
     volumes:
       - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
     ports:
@@ -110,6 +116,8 @@ services:
     restart: unless-stopped
     depends_on:
       - prometheus
+      - loki
+      - tempo
       - jaeger
     networks:
       - ttc-mesh-net
@@ -125,6 +133,39 @@ services:
     ports:
       - "3100:3100"
     restart: unless-stopped
+    networks:
+      - ttc-mesh-net
+
+  # -------------------------------------------------------------
+  # LGTM traces: Grafana Tempo, fed by the OpenTelemetry collector
+  # -------------------------------------------------------------
+  tempo:
+    image: grafana/tempo:2.7.2
+    container_name: ttc-tempo
+    command: ["-config.file=/etc/tempo.yaml"]
+    volumes:
+      - ./tempo/tempo.yaml:/etc/tempo.yaml:ro
+    ports:
+      - "3200:3200"
+    restart: unless-stopped
+    depends_on:
+      - prometheus
+    networks:
+      - ttc-mesh-net
+
+  otel-collector:
+    image: otel/opentelemetry-collector:0.114.0
+    container_name: ttc-otel-collector
+    command: ["--config=/etc/otel-collector.yaml"]
+    volumes:
+      - ./otel/otel-collector.yaml:/etc/otel-collector.yaml:ro
+    ports:
+      - "4317:4317"
+      - "4318:4318"
+    restart: unless-stopped
+    depends_on:
+      - tempo
+      - jaeger
     networks:
       - ttc-mesh-net
 
