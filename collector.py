@@ -13,6 +13,7 @@ from opentelemetry.sdk.trace.export import BatchSpanProcessor
 from opentelemetry.sdk.resources import Resource
 from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
 from opentelemetry.instrumentation.requests import RequestsInstrumentor
+from headsigns import direction_for, ensure_loaded
 
 REDIS_HOST = os.getenv("REDIS_HOST", "redis")
 REDIS_PORT = int(os.getenv("REDIS_PORT", 6379))
@@ -123,6 +124,7 @@ def fetch_and_store_ttc_vehicles():
                         speed_mps = v.position.speed if v.position.HasField("speed") else 0.0
                         speed = round(speed_mps * 3.6, 1)
                         bearing = round(v.position.bearing, 1) if v.position.HasField("bearing") else 0.0
+                        trip_id = v.trip.trip_id if v.trip.HasField("trip_id") else ""
                         if speed > 0:
                             total_speed += speed
                             speed_count += 1
@@ -138,6 +140,7 @@ def fetch_and_store_ttc_vehicles():
                             "bearing": bearing,
                             "timestamp": v.timestamp
                         }
+                        vehicle_data.update(direction_for(trip_id))
                         pipeline.hset("ttc:vehicles:next", vehicle_data["id"], json.dumps(vehicle_data))
                         total_vehicles += 1
                         all_vehicles.append(vehicle_data)
@@ -237,6 +240,7 @@ if __name__ == "__main__":
     print(f"Starting Prometheus Collector Metrics Server on port {METRICS_PORT}...")
     start_http_server(METRICS_PORT)
     print("Starting TTC GTFS-RT Real-Time Collector loop with Jaeger Tracing...")
+    ensure_loaded()
     while True:
         fetch_and_store_ttc_vehicles()
         time.sleep(10)

@@ -207,7 +207,9 @@
         .cta:hover { background: #F2F2F7; }
         .cta:disabled { opacity: 0.45; cursor: default; }
         .ride-title { font-size: 22px; font-weight: 800; letter-spacing: -0.4px; }
-        .ride-sub { margin-top: 4px; color: var(--muted); font-size: 13px; font-weight: 600; }
+        .ride-sub { margin-top: 4px; color: #fff; font-size: 15px; font-weight: 700; }
+        .ride-way { margin-top: 10px; font-size: 14px; font-weight: 650; letter-spacing: -0.2px; }
+        .ride-warn { margin-top: 8px; color: #FFD60A; font-size: 13px; font-weight: 550; line-height: 1.35; }
         .close {
             width: 32px;
             height: 32px;
@@ -270,6 +272,16 @@
             <button id="clear" class="icon-btn" type="button" hidden aria-label="Clear">✕</button>
             <button id="menu-btn" class="icon-btn" type="button" aria-label="Menu">☰</button>
         </div>
+        <div class="chips" id="cities">
+            <button class="chip on" type="button" data-city="Toronto">Toronto</button>
+            <button class="chip" type="button" data-city="Montreal">Montreal</button>
+            <button class="chip" type="button" data-city="Vancouver">Vancouver</button>
+            <button class="chip" type="button" data-city="Calgary">Calgary</button>
+            <button class="chip" type="button" data-city="Ottawa">Ottawa</button>
+            <button class="chip" type="button" data-city="Edmonton">Edmonton</button>
+            <button class="chip" type="button" data-city="Winnipeg">Winnipeg</button>
+            <button class="chip" type="button" data-city="Halifax">Halifax</button>
+        </div>
         <div class="chips" id="chips">
             <button class="chip" type="button" data-route="504">504 King</button>
             <button class="chip" type="button" data-route="501">501 Queen</button>
@@ -330,9 +342,11 @@
             </div>
             <button class="close" id="ride-close" type="button" aria-label="Stop following">✕</button>
         </div>
+        <div class="ride-way" id="ride-way"></div>
+        <div class="ride-warn" id="ride-warn"></div>
         <div class="stats">
             <div class="stat"><b id="ride-speed">—</b><span>Speed</span></div>
-            <div class="stat"><b id="ride-head">—</b><span>Heading</span></div>
+            <div class="stat"><b id="ride-head">—</b><span>Direction</span></div>
         </div>
     </div>
 
@@ -340,8 +354,18 @@
     <div id="waiting" class="waiting">Connecting to live TTC vehicles…</div>
 
     <script>
-        const HERO = { center: [-79.3905, 43.6474], zoom: 15.2, pitch: 45, bearing: 28 };
-        const FOLLOW_ZOOM = 16.75;
+        const HERO = { center: [-79.387, 43.6505], zoom: 16.35, pitch: 64, bearing: 28 };
+        const FOLLOW_ZOOM = 17.15;
+        const CITIES = {
+            Toronto: { center: [-79.387, 43.6505], zoom: 16.35, pitch: 64, bearing: 28 },
+            Montreal: { center: [-73.5674, 45.5019], zoom: 16.2, pitch: 64, bearing: 20 },
+            Vancouver: { center: [-123.1207, 49.2827], zoom: 16.15, pitch: 66, bearing: -18 },
+            Calgary: { center: [-114.0719, 51.0447], zoom: 15.9, pitch: 62, bearing: 14 },
+            Ottawa: { center: [-75.6972, 45.4215], zoom: 16.05, pitch: 62, bearing: 10 },
+            Edmonton: { center: [-113.4938, 53.5461], zoom: 15.7, pitch: 60, bearing: 12 },
+            Winnipeg: { center: [-97.1384, 49.8954], zoom: 15.7, pitch: 60, bearing: 8 },
+            Halifax: { center: [-63.5752, 44.6488], zoom: 15.9, pitch: 62, bearing: 32 }
+        };
         const ROUTE_NAMES = {
             "501": "Queen", "502": "Downtowner", "503": "Kingston Rd", "504": "King",
             "505": "Dundas", "506": "Carlton", "509": "Harbourfront", "510": "Spadina",
@@ -367,39 +391,42 @@
 
         const uberStyle = {
             version: 8,
-            name: "Uber Night",
+            name: "Canada Aerial",
             glyphs: "https://tiles.openfreemap.org/fonts/{fontstack}/{range}.pbf",
             sources: {
+                satellite: {
+                    type: "raster",
+                    tiles: ["https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"],
+                    tileSize: 256,
+                    maxzoom: 19,
+                    attribution: "Imagery © Esri, Maxar, Earthstar Geographics"
+                },
+                terrain: {
+                    type: "raster-dem",
+                    tiles: ["https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png"],
+                    encoding: "terrarium",
+                    tileSize: 256,
+                    maxzoom: 15
+                },
                 openmaptiles: {
                     type: "vector",
                     url: "https://tiles.openfreemap.org/planet",
                     attribution: "© OpenStreetMap © OpenFreeMap"
                 }
             },
+            terrain: { source: "terrain", exaggeration: 1.35 },
+            sky: {
+                "sky-color": "#9EC0DC",
+                "horizon-color": "#E7EEF5",
+                "fog-color": "#C9D7E6",
+                "sky-horizon-blend": 0.52,
+                "horizon-fog-blend": 0.62,
+                "fog-ground-blend": 0.28,
+                "atmosphere-blend": 0.8
+            },
             layers: [
                 { id: "background", type: "background", paint: { "background-color": "#1A1C24" } },
-                { id: "water", type: "fill", source: "openmaptiles", "source-layer": "water", paint: { "fill-color": "#101826" } },
-                { id: "park", type: "fill", source: "openmaptiles", "source-layer": "landuse",
-                  filter: ["match", ["get", "class"], ["park", "cemetery", "grass"], true, false],
-                  paint: { "fill-color": "#1C3328" } },
-                { id: "wood", type: "fill", source: "openmaptiles", "source-layer": "landcover",
-                  filter: ["match", ["get", "class"], ["wood", "grass"], true, false],
-                  paint: { "fill-color": "#1C3328" } },
-                road("road-service", ["service"], "#4A5168", 2.6, 15),
-                road("road-minor", ["minor", "tertiary"], "#636B86", 4.2, 11),
-                road("road-secondary", ["secondary"], "#767E9C", 5.4, 10),
-                road("road-primary", ["primary", "trunk"], "#8E96B4", 7, 8),
-                road("road-motorway", ["motorway"], "#B4BCD4", 8.2, 6),
-                { id: "buildings", type: "fill-extrusion", source: "openmaptiles", "source-layer": "building", minzoom: 15.8,
-                  paint: {
-                      "fill-extrusion-color": "#2C3348",
-                      "fill-extrusion-height": ["case",
-                          [">", ["to-number", ["get", "render_height"]], 0], ["to-number", ["get", "render_height"]],
-                          [">", ["to-number", ["get", "height"]], 0], ["to-number", ["get", "height"]],
-                          14],
-                      "fill-extrusion-base": ["coalesce", ["to-number", ["get", "render_min_height"]], 0],
-                      "fill-extrusion-opacity": 0.9
-                  } },
+                { id: "satellite", type: "raster", source: "satellite", paint: { "raster-saturation": 0.05, "raster-contrast": 0.08 } },
                 { id: "road-label", type: "symbol", source: "openmaptiles", "source-layer": "transportation_name", minzoom: 14.2,
                   filter: ["match", ["get", "class"], ["motorway", "trunk", "primary", "secondary", "tertiary"], true, false],
                   layout: {
@@ -410,7 +437,15 @@
                       "text-letter-spacing": 0.04,
                       "text-max-angle": 28
                   },
-                  paint: { "text-color": "#F2F2F7", "text-halo-color": "#1A1C24", "text-halo-width": 1.5 } },
+                  paint: { "text-color": "#F7F7F8", "text-halo-color": "#111318", "text-halo-width": 1.6 } },
+                { id: "city-label", type: "symbol", source: "openmaptiles", "source-layer": "place", minzoom: 3, maxzoom: 12,
+                  filter: ["match", ["get", "class"], ["city", "town", "state"], true, false],
+                  layout: {
+                      "text-field": ["coalesce", ["get", "name:latin"], ["get", "name"]],
+                      "text-font": ["Noto Sans Regular"],
+                      "text-size": ["interpolate", ["linear"], ["zoom"], 3, 11, 6, 14, 10, 18]
+                  },
+                  paint: { "text-color": "#F7F7F8", "text-halo-color": "#111318", "text-halo-width": 1.6 } },
                 { id: "place-label", type: "symbol", source: "openmaptiles", "source-layer": "place", minzoom: 12,
                   filter: ["match", ["get", "class"], ["neighbourhood", "suburb", "quarter"], true, false],
                   layout: {
@@ -418,25 +453,9 @@
                       "text-font": ["Noto Sans Regular"],
                       "text-size": 13
                   },
-                  paint: { "text-color": "#C7C7CC", "text-halo-color": "#1A1C24", "text-halo-width": 1.3 } }
+                  paint: { "text-color": "#F7F7F8", "text-halo-color": "#111318", "text-halo-width": 1.5 } }
             ]
         };
-
-        function road(id, classes, color, width, minzoom) {
-            return {
-                id: id,
-                type: "line",
-                source: "openmaptiles",
-                "source-layer": "transportation",
-                minzoom: minzoom,
-                filter: ["match", ["get", "class"], classes, true, false],
-                layout: { "line-cap": "round", "line-join": "round" },
-                paint: {
-                    "line-color": color,
-                    "line-width": ["interpolate", ["exponential", 1.4], ["zoom"], 10, width * 0.22, 13, width * 0.55, 15, width * 1.15, 17, width * 2.3, 19, width * 4]
-                }
-            };
-        }
 
         function roundRect(ctx, x, y, w, h, r) {
             ctx.beginPath();
@@ -577,6 +596,9 @@
                         lon: lon,
                         bearing: Number(v.bearing) || 0,
                         targetBearing: Number(v.bearing) || 0,
+                        toward: v.toward || "",
+                        compass: v.compass || "",
+                        other: v.other || "",
                         aLat: lat, aLon: lon, bLat: lat, bLon: lon,
                         t0: now, dur: 1,
                         feature: {
@@ -610,6 +632,9 @@
                     }
                     s.route = String(v.route || s.route);
                     s.mode = mode;
+                    if (v.toward) s.toward = v.toward;
+                    if (v.compass) s.compass = v.compass;
+                    if (v.other) s.other = v.other;
                 }
             }
             if (full) {
@@ -657,7 +682,7 @@
                             map.easeTo({
                                 center: [s.lon, s.lat],
                                 bearing: s.bearing,
-                                pitch: 58,
+                                pitch: 64,
                                 zoom: FOLLOW_ZOOM,
                                 duration: 280,
                                 easing: function (t) { return t; },
@@ -687,9 +712,22 @@
 
         function paintRide(s) {
             document.getElementById("ride-title").textContent = routeLabel(s.route);
-            document.getElementById("ride-sub").textContent = modeLabel(s.mode) + " · Live";
+            const way = document.getElementById("ride-way");
+            const warn = document.getElementById("ride-warn");
+            if (s.toward) {
+                const going = s.compass ? "Going " + s.compass.toLowerCase() + " toward " + s.toward : "Toward " + s.toward;
+                document.getElementById("ride-sub").textContent = going;
+                way.textContent = s.other ? (s.other + "  →  " + s.toward) : "";
+                warn.textContent = s.other
+                    ? "This bus is going to " + s.toward + ". The one coming the other way goes to " + s.other + ", and it stops across the street."
+                    : "";
+            } else {
+                document.getElementById("ride-sub").textContent = modeLabel(s.mode) + " · Live";
+                way.textContent = "";
+                warn.textContent = "";
+            }
             document.getElementById("ride-speed").textContent = (s.shownKmh || 0).toFixed(0) + " km/h";
-            document.getElementById("ride-head").textContent = compass(s.bearing) + "  " + Math.round(s.bearing) + "°";
+            document.getElementById("ride-head").textContent = s.compass || compass(s.bearing);
         }
 
         function applyStats(message) {
@@ -743,7 +781,7 @@
                     center: [s.lon, s.lat],
                     zoom: FOLLOW_ZOOM,
                     bearing: s.bearing,
-                    pitch: 58,
+                    pitch: 64,
                     duration: 1500,
                     essential: true
                 });
@@ -780,7 +818,7 @@
             hint.style.display = "block";
             hint.textContent = n ? n + " vehicles on " + query : "No vehicles on " + query;
             if (n && mapLoaded && !followId) {
-                map.fitBounds(bounds, { padding: { top: 120, bottom: 260, left: 40, right: 40 }, maxZoom: 15.2, pitch: 48, duration: 900 });
+                map.fitBounds(bounds, { padding: { top: 150, bottom: 260, left: 40, right: 40 }, maxZoom: 16.2, pitch: 62, duration: 900 });
             }
         }
 
@@ -823,7 +861,9 @@
             zoom: HERO.zoom,
             pitch: HERO.pitch,
             bearing: HERO.bearing,
-            maxPitch: 68,
+            maxPitch: 78,
+            minZoom: 2.4,
+            maxZoom: 18.5,
             attributionControl: true,
             fadeDuration: 0
         });
@@ -906,7 +946,7 @@
             document.getElementById("recenter").hidden = true;
             const s = fleet.get(followId);
             if (s) {
-                map.flyTo({ center: [s.lon, s.lat], zoom: FOLLOW_ZOOM, bearing: s.bearing, pitch: 58, duration: 700, essential: true });
+                map.flyTo({ center: [s.lon, s.lat], zoom: FOLLOW_ZOOM, bearing: s.bearing, pitch: 64, duration: 700, essential: true });
             }
         });
         document.getElementById("search").addEventListener("input", function (e) { setQuery(e.target.value); });
@@ -914,6 +954,23 @@
             if (e.key === "Enter") followNext();
         });
         document.getElementById("clear").addEventListener("click", function () { setQuery(""); });
+        document.getElementById("cities").addEventListener("click", function (e) {
+            const btn = e.target.closest("[data-city]");
+            if (!btn) return;
+            const city = CITIES[btn.dataset.city];
+            if (!city) return;
+            document.querySelectorAll("#cities .chip").forEach(function (el) { el.classList.toggle("on", el === btn); });
+            if (followId) stopFollow(false);
+            userTookCamera = false;
+            map.flyTo({
+                center: city.center,
+                zoom: city.zoom,
+                pitch: city.pitch,
+                bearing: city.bearing,
+                duration: 1600,
+                essential: true
+            });
+        });
         document.getElementById("chips").addEventListener("click", function (e) {
             const btn = e.target.closest(".chip");
             if (!btn) return;

@@ -24,6 +24,9 @@ Thumbs.db
 # Docker local data (if any)
 *.log
 
+# Schedule cache built from the TTC GTFS download
+data/
+
 # Personal Demo Script & Teleprompter
 DEMO_SCRIPT.md
 post.md
