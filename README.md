@@ -49,6 +49,24 @@ An enterprise, event-driven Toronto Transit Commission (TTC) monitoring pipeline
 
 ---
 
+## What is running
+
+The collector pulls the public GTFS-RT feed about every 10 seconds. Each vehicle is one record: an id, a trip id, a route, a position, a bearing, a speed, and a timestamp. The new fleet is written to a fresh Redis hash and renamed into place, so the map never reads a half-updated list.
+
+![Live map of Toronto vehicles on aerial imagery](docs/live-map.jpg)
+
+Grafana, Jaeger, and the map are three views of that same poll. The fleet count drops overnight and climbs back over a thousand by morning. The sync chart carries a trace id as an exemplar, and the log line ends with the same id.
+
+![Grafana command center for the live feed](docs/grafana.jpg)
+
+![Jaeger traces for one collector sync](docs/jaeger.jpg)
+
+The Meshery frame is the design those processes run as: the API, the collector, Redis, Prometheus, and Jaeger, with the canary deployment beside the live API.
+
+![Meshery Kanvas design of the transit mesh](docs/meshery.jpg)
+
+---
+
 ## ⚡ Quick Start: Spin Up the Full Stack in 30 Seconds
 
 Ensure OrbStack (or Docker Desktop) is running on your Mac, then run:
