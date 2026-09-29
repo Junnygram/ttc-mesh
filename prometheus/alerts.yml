@@ -1,0 +1,19 @@
+groups:
+  - name: ttc-feed
+    rules:
+      - alert: TTCFeedStale
+        expr: ttc_feed_age_seconds > 60
+        for: 30s
+        labels:
+          severity: page
+        annotations:
+          summary: The TTC live feed is stale
+          description: Vehicle positions are {{ $value | humanize }}s old. The map will keep drawing the last batch until a fresh sync lands.
+      - alert: TTCFeedDown
+        expr: ttc_feed_age_seconds > 180
+        for: 1m
+        labels:
+          severity: page
+        annotations:
+          summary: The TTC live feed has stopped
+          description: No fresh GTFS-RT positions for three minutes. Treat the map as last-known, not live.

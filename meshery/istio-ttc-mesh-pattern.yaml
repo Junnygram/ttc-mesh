@@ -138,6 +138,10 @@ spec:
       labels:
         app: ttc-api
         version: v1
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8000"
+        prometheus.io/path: "/metrics"
     spec:
       containers:
       - name: ttc-api
@@ -148,6 +152,25 @@ spec:
           value: "ttc-redis-service"
         ports:
         - containerPort: 8000
+        readinessProbe:
+          httpGet:
+            path: /api/transit/stats
+            port: 8000
+          initialDelaySeconds: 8
+          periodSeconds: 10
+        livenessProbe:
+          httpGet:
+            path: /api/transit/stats
+            port: 8000
+          initialDelaySeconds: 20
+          periodSeconds: 20
+        resources:
+          requests:
+            cpu: 100m
+            memory: 128Mi
+          limits:
+            cpu: "1"
+            memory: 512Mi
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -168,6 +191,10 @@ spec:
       labels:
         app: ttc-api
         version: v2-canary
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8000"
+        prometheus.io/path: "/metrics"
     spec:
       containers:
       - name: ttc-api
@@ -178,6 +205,25 @@ spec:
           value: "ttc-redis-service"
         ports:
         - containerPort: 8000
+        readinessProbe:
+          httpGet:
+            path: /api/transit/stats
+            port: 8000
+          initialDelaySeconds: 8
+          periodSeconds: 10
+        livenessProbe:
+          httpGet:
+            path: /api/transit/stats
+            port: 8000
+          initialDelaySeconds: 20
+          periodSeconds: 20
+        resources:
+          requests:
+            cpu: 100m
+            memory: 128Mi
+          limits:
+            cpu: "1"
+            memory: 512Mi
 ---
 # 6. Ingestion Collector Deployment & Service
 apiVersion: v1
@@ -211,6 +257,10 @@ spec:
     metadata:
       labels:
         app: ttc-collector
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8001"
+        prometheus.io/path: "/metrics"
     spec:
       containers:
       - name: ttc-collector
@@ -221,6 +271,25 @@ spec:
           value: "ttc-redis-service"
         ports:
         - containerPort: 8001
+        readinessProbe:
+          httpGet:
+            path: /metrics
+            port: 8001
+          initialDelaySeconds: 8
+          periodSeconds: 10
+        livenessProbe:
+          httpGet:
+            path: /metrics
+            port: 8001
+          initialDelaySeconds: 20
+          periodSeconds: 20
+        resources:
+          requests:
+            cpu: 100m
+            memory: 128Mi
+          limits:
+            cpu: "1"
+            memory: 512Mi
 ---
 # 7. Redis Cache Service & Deployment
 apiVersion: v1

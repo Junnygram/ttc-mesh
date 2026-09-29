@@ -2,8 +2,8 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>TTC</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <title>Canada</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@500;600;700;800&display=swap" rel="stylesheet">
     <link href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" rel="stylesheet">
@@ -101,6 +101,29 @@
             font-weight: 600;
             box-shadow: 0 6px 16px rgba(0,0,0,0.25);
         }
+        .results {
+            display: none;
+            background: #fff;
+            color: #111;
+            border-radius: 16px;
+            overflow: auto;
+            max-height: 320px;
+            box-shadow: 0 16px 40px rgba(0,0,0,0.28);
+        }
+        .results.open { display: block; }
+        .result {
+            display: block;
+            width: 100%;
+            text-align: left;
+            border: 0;
+            background: #fff;
+            padding: 10px 14px;
+            cursor: pointer;
+        }
+        .result b { display: block; font-size: 15px; font-weight: 750; letter-spacing: -0.2px; }
+        .result span { display: block; margin-top: 2px; color: #6E6E73; font-size: 12px; font-weight: 600; }
+        .result.on, .result:hover { background: #F2F2F7; }
+        .result.empty { color: #6E6E73; font-size: 14px; font-weight: 650; cursor: default; }
 
         .menu {
             display: none;
@@ -209,7 +232,10 @@
         .ride-title { font-size: 22px; font-weight: 800; letter-spacing: -0.4px; }
         .ride-sub { margin-top: 4px; color: #fff; font-size: 15px; font-weight: 700; }
         .ride-way { margin-top: 10px; font-size: 14px; font-weight: 650; letter-spacing: -0.2px; }
+        .ride-stop { margin-top: 6px; color: #D1D1D6; font-size: 13px; font-weight: 650; }
         .ride-warn { margin-top: 8px; color: #FFD60A; font-size: 13px; font-weight: 550; line-height: 1.35; }
+        .feed-age { display: none; margin-top: 6px; font-size: 11px; font-weight: 750; color: #FFD60A; text-align: right; }
+        .feed-age.bad { color: #FF453A; }
         .close {
             width: 32px;
             height: 32px;
@@ -260,6 +286,40 @@
         .maplibregl-ctrl-group { background: #1C1C1E !important; border-radius: 12px !important; overflow: hidden; box-shadow: 0 8px 20px rgba(0,0,0,0.35) !important; }
         .maplibregl-ctrl-group button { filter: invert(1); }
         .maplibregl-ctrl-group button + button { border-top: 1px solid rgba(255,255,255,0.12) !important; }
+
+        @media (max-width: 720px) {
+            .top {
+                top: max(8px, env(safe-area-inset-top));
+                left: 8px;
+                width: calc(100vw - 16px);
+                gap: 6px;
+            }
+            .where { padding: 6px; border-radius: 14px; }
+            .mark { width: 34px; height: 34px; border-radius: 10px; }
+            .chip, .filter { padding: 8px 11px; }
+            .sheet, .ride {
+                left: 8px;
+                right: 8px;
+                width: auto;
+                transform: none;
+                bottom: max(8px, env(safe-area-inset-bottom));
+                max-height: 42vh;
+                overflow-y: auto;
+                padding: 10px 12px 12px;
+                border-radius: 18px;
+            }
+            .count { font-size: 32px; }
+            .ride-title { font-size: 20px; }
+            .ride-sub, .ride-way, .ride-warn { font-size: 13px; }
+            .stats { margin: 10px 0; gap: 6px; }
+            .stat { padding: 10px; }
+            .cta { height: 46px; }
+            .recenter { bottom: calc(42vh + 16px); }
+            .maplibregl-ctrl-bottom-left,
+            .maplibregl-ctrl-bottom-right { bottom: auto !important; top: 128px !important; }
+            .maplibregl-ctrl-bottom-left { left: 8px !important; }
+            .maplibregl-ctrl-bottom-right { right: 8px !important; }
+        }
     </style>
 </head>
 <body>
@@ -267,15 +327,17 @@
 
     <div class="top">
         <div class="where">
-            <div class="mark">TTC</div>
-            <input id="search" type="text" placeholder="Where to?" autocomplete="off" spellcheck="false">
+            <div class="mark">CAN</div>
+            <input id="search" type="text" placeholder="Search routes, stops, cities" autocomplete="off" spellcheck="false" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="results">
             <button id="clear" class="icon-btn" type="button" hidden aria-label="Clear">✕</button>
             <button id="menu-btn" class="icon-btn" type="button" aria-label="Menu">☰</button>
         </div>
+        <div id="results" class="results" role="listbox"></div>
         <div class="chips" id="cities">
             <button class="chip on" type="button" data-city="Toronto">Toronto</button>
             <button class="chip" type="button" data-city="Montreal">Montreal</button>
             <button class="chip" type="button" data-city="Vancouver">Vancouver</button>
+            <button class="chip" type="button" data-city="Victoria">Victoria</button>
             <button class="chip" type="button" data-city="Calgary">Calgary</button>
             <button class="chip" type="button" data-city="Ottawa">Ottawa</button>
             <button class="chip" type="button" data-city="Edmonton">Edmonton</button>
@@ -316,9 +378,10 @@
         <div class="sheet-head">
             <div>
                 <div class="count" id="count">—</div>
-                <div class="count-label">vehicles on the road</div>
+                <div class="count-label" id="count-label">vehicles in Toronto</div>
             </div>
             <div class="live off" id="live"><span class="dot"></span><span id="live-label">CONNECTING</span></div>
+            <div id="feed-age" class="feed-age"></div>
         </div>
         <div class="stats">
             <div class="stat"><b id="moving">—</b><span>In motion</span></div>
@@ -343,6 +406,7 @@
             <button class="close" id="ride-close" type="button" aria-label="Stop following">✕</button>
         </div>
         <div class="ride-way" id="ride-way"></div>
+        <div class="ride-stop" id="ride-stop"></div>
         <div class="ride-warn" id="ride-warn"></div>
         <div class="stats">
             <div class="stat"><b id="ride-speed">—</b><span>Speed</span></div>
@@ -351,20 +415,32 @@
     </div>
 
     <button id="recenter" class="recenter" type="button" hidden>Re-center</button>
-    <div id="waiting" class="waiting">Connecting to live TTC vehicles…</div>
+    <div id="waiting" class="waiting">Connecting to live transit…</div>
 
     <script>
         const HERO = { center: [-79.387, 43.6505], zoom: 16.35, pitch: 64, bearing: 28 };
         const FOLLOW_ZOOM = 17.15;
         const CITIES = {
-            Toronto: { center: [-79.387, 43.6505], zoom: 16.35, pitch: 64, bearing: 28 },
-            Montreal: { center: [-73.5674, 45.5019], zoom: 16.2, pitch: 64, bearing: 20 },
-            Vancouver: { center: [-123.1207, 49.2827], zoom: 16.15, pitch: 66, bearing: -18 },
-            Calgary: { center: [-114.0719, 51.0447], zoom: 15.9, pitch: 62, bearing: 14 },
-            Ottawa: { center: [-75.6972, 45.4215], zoom: 16.05, pitch: 62, bearing: 10 },
-            Edmonton: { center: [-113.4938, 53.5461], zoom: 15.7, pitch: 60, bearing: 12 },
-            Winnipeg: { center: [-97.1384, 49.8954], zoom: 15.7, pitch: 60, bearing: 8 },
-            Halifax: { center: [-63.5752, 44.6488], zoom: 15.9, pitch: 62, bearing: 32 }
+            Toronto: { center: [-79.387, 43.6505], zoom: 16.35, pitch: 64, bearing: 28, live: true, agency: "TTC", routes: [
+                { id: "504", label: "504 King" }, { id: "501", label: "501 Queen" }, { id: "510", label: "510 Spadina" },
+                { id: "506", label: "506 Carlton" }, { id: "29", label: "29 Dufferin" }
+            ]},
+            Montreal: { center: [-73.5674, 45.5019], zoom: 16.2, pitch: 64, bearing: 20, live: false, agency: "STM", note: "STM publishes live positions behind a developer key." },
+            Vancouver: { center: [-123.1207, 49.2827], zoom: 16.15, pitch: 66, bearing: -18, live: false, agency: "TransLink", note: "TransLink publishes live positions behind an API key. Victoria is the open British Columbia feed." },
+            Victoria: { center: [-123.3656, 48.4284], zoom: 15.6, pitch: 62, bearing: 18, live: true, agency: "BC Transit", routes: [
+                { id: "70", label: "70" }, { id: "61", label: "61" }, { id: "2", label: "2" }, { id: "75", label: "75" }
+            ]},
+            Calgary: { center: [-114.0719, 51.0447], zoom: 15.9, pitch: 62, bearing: 14, live: true, agency: "Calgary Transit", routes: [
+                { id: "1", label: "1" }, { id: "3", label: "3" }, { id: "201", label: "201 Red" }, { id: "202", label: "202 Blue" }
+            ]},
+            Ottawa: { center: [-75.6972, 45.4215], zoom: 16.05, pitch: 62, bearing: 10, live: false, agency: "OC Transpo", note: "OC Transpo publishes live positions behind a subscription key." },
+            Edmonton: { center: [-113.4938, 53.5461], zoom: 15.7, pitch: 60, bearing: 12, live: true, agency: "ETS", routes: [
+                { id: "4", label: "4" }, { id: "8", label: "8" }, { id: "2", label: "2" }, { id: "5", label: "5" }, { id: "1", label: "1" }
+            ]},
+            Winnipeg: { center: [-97.1384, 49.8954], zoom: 15.7, pitch: 60, bearing: 8, live: false, agency: "Winnipeg Transit", note: "Winnipeg Transit does not publish a public vehicle feed." },
+            Halifax: { center: [-63.5752, 44.6488], zoom: 15.9, pitch: 62, bearing: 32, live: true, agency: "Halifax Transit", routes: [
+                { id: "1", label: "1" }, { id: "2", label: "2" }, { id: "3", label: "3" }, { id: "8", label: "8" }, { id: "10", label: "10" }
+            ]}
         };
         const ROUTE_NAMES = {
             "501": "Queen", "502": "Downtowner", "503": "Kingston Rd", "504": "King",
@@ -385,6 +461,11 @@
         let lastHud = 0;
         let filterMode = "all";
         let query = "";
+        let picked = null;
+        let resultHits = [];
+        let resultIndex = 0;
+        let activeCity = "Toronto";
+        let agencyStatus = {};
         let activeCount = 0;
         let movingCount = 0;
         let avgSpeed = 0;
@@ -457,7 +538,7 @@
             ]
         };
 
-        function roundRect(ctx, x, y, w, h, r) {
+        function plate(ctx, x, y, w, h, r) {
             ctx.beginPath();
             ctx.moveTo(x + r, y);
             ctx.arcTo(x + w, y, x + w, y + h, r);
@@ -469,38 +550,36 @@
 
         function vehicleCanvas(kind) {
             const ratio = 2;
-            const w = 36;
-            const h = kind === "streetcar" ? 78 : 62;
+            const size = 32;
             const canvas = document.createElement("canvas");
-            canvas.width = w * ratio;
-            canvas.height = h * ratio;
+            canvas.width = size * ratio;
+            canvas.height = size * ratio;
             const ctx = canvas.getContext("2d");
             ctx.scale(ratio, ratio);
-            const body = kind === "stopped" ? "#636366" : "#F5F5F7";
-            ctx.save();
-            ctx.shadowColor = "rgba(0,0,0,0.55)";
-            ctx.shadowBlur = 8;
-            ctx.shadowOffsetY = 3;
-            roundRect(ctx, 7, 4, w - 14, h - 8, 8);
+            const ring = kind === "streetcar" ? "#EA4335"
+                : kind === "express" ? "#34A853"
+                : kind === "stopped" ? "#80868B"
+                : "#1A73E8";
+            plate(ctx, 1, 1, size - 2, size - 2, 8);
+            ctx.fillStyle = "#ffffff";
+            ctx.fill();
+            ctx.lineWidth = 1.5;
+            ctx.strokeStyle = ring;
+            ctx.stroke();
+
+            const body = kind === "stopped" ? "#5F6368" : "#111111";
+            plate(ctx, 8, 6, 16, 18, 3.5);
             ctx.fillStyle = body;
             ctx.fill();
-            ctx.restore();
-            roundRect(ctx, 11, 9, w - 22, 10, 2.5);
-            ctx.fillStyle = "#1C1C1E";
+            ctx.fillRect(5.5, 10, 2.2, 3.2);
+            ctx.fillRect(24.3, 10, 2.2, 3.2);
+            plate(ctx, 10.2, 8.2, 11.6, 7.2, 1.6);
+            ctx.fillStyle = "#ffffff";
             ctx.fill();
-            const stripe = kind === "streetcar" ? "#FF453A" : kind === "express" ? "#30D158" : "#D1D1D6";
-            if (kind !== "stopped") {
-                ctx.fillStyle = stripe;
-                ctx.globalAlpha = kind === "bus" ? 0.55 : 0.95;
-                ctx.fillRect(w / 2 - 1.6, 24, 3.2, h - 40);
-                ctx.globalAlpha = 1;
-                ctx.fillStyle = "#FFF6D0";
-                ctx.beginPath(); ctx.arc(12, 7.5, 1.7, 0, Math.PI * 2); ctx.fill();
-                ctx.beginPath(); ctx.arc(w - 12, 7.5, 1.7, 0, Math.PI * 2); ctx.fill();
-            }
-            ctx.fillStyle = "#FF453A";
-            ctx.fillRect(11, h - 11, 5, 2.4);
-            ctx.fillRect(w - 16, h - 11, 5, 2.4);
+            ctx.beginPath();
+            ctx.arc(11.2, 22.2, 2.15, 0, Math.PI * 2);
+            ctx.arc(20.8, 22.2, 2.15, 0, Math.PI * 2);
+            ctx.fill();
             return canvas;
         }
 
@@ -511,9 +590,9 @@
             return "bus";
         }
 
-        function routeLabel(route) {
-            const name = ROUTE_NAMES[String(route)];
-            return name ? route + " " + name : "Route " + (route || "TTC");
+        function routeLabel(route, city) {
+            const name = (city || activeCity) === "Toronto" ? ROUTE_NAMES[String(route)] : "";
+            return name ? route + " " + name : (route ? "Route " + route : "Bus");
         }
 
         function modeLabel(mode) {
@@ -522,8 +601,8 @@
             return "Bus";
         }
 
-        function inToronto(lat, lon) {
-            return lat > 43.55 && lat < 43.9 && lon > -79.7 && lon < -79.1;
+        function vehicleCity(s) {
+            return (s && s.city) || "Toronto";
         }
 
         function meters(lat1, lon1, lat2, lon2) {
@@ -546,19 +625,32 @@
 
         function iconFor(s) {
             if (!s.moving) return "veh-stopped";
-            if (s.mode === "streetcar") return "veh-streetcar";
+            if (s.mode === "streetcar" || s.mode === "train") return "veh-streetcar";
             if (s.mode === "express") return "veh-express";
             return "veh-bus";
         }
 
+        function stopPlace(text) {
+            return String(text || "").replace(/^(Arriving at|Stopped at|Next stop) /, "");
+        }
+
+        function matchesSearch(s) {
+            if (picked) {
+                if (picked.city && vehicleCity(s) !== picked.city) return false;
+                if (picked.route && String(s.route) !== String(picked.route)) return false;
+                if (picked.toward && (s.toward || "") !== picked.toward) return false;
+                if (picked.stop && stopPlace(s.stop) !== picked.stop) return false;
+                return true;
+            }
+            if (!query) return true;
+            return String(s.route || "").toLowerCase() === query.toLowerCase();
+        }
+
         function isVisible(s) {
+            if (vehicleCity(s) !== activeCity && s.id !== followId) return false;
             if (s.id === followId) return true;
             if (filterMode !== "all" && s.mode !== filterMode) return false;
-            if (query) {
-                const r = (s.route || "").toLowerCase();
-                const q = query.toLowerCase();
-                if (!(r === q || r.startsWith(q))) return false;
-            }
+            if (!matchesSearch(s)) return false;
             if (s.id !== followId && !s.moving && mapLoaded && map.getZoom() < 15.6) return false;
             return true;
         }
@@ -578,17 +670,19 @@
             for (const v of list || []) {
                 const lat = Number(v.lat);
                 const lon = Number(v.lon);
-                if (!v.id || !inToronto(lat, lon)) continue;
+                if (!v.id || !isFinite(lat) || !isFinite(lon)) continue;
                 const id = String(v.id);
                 seen.add(id);
                 const speed = Number(v.speed) || 0;
-                const mode = classify(v.route);
+                const mode = v.mode || classify(v.route);
                 let s = fleet.get(id);
                 if (!s) {
                     s = {
                         id: id,
                         route: String(v.route || ""),
                         mode: mode,
+                        city: v.city || "Toronto",
+                        agency: v.agency || "",
                         speed: speed,
                         moving: speed > 0,
                         shownKmh: speed,
@@ -599,6 +693,11 @@
                         toward: v.toward || "",
                         compass: v.compass || "",
                         other: v.other || "",
+                        stop: v.stop || "",
+                        occupancy: v.occupancy || "",
+                        shortTurn: !!v.short_turn,
+                        alert: v.alert || "",
+                        bunched: !!v.bunched,
                         aLat: lat, aLon: lon, bLat: lat, bLon: lon,
                         t0: now, dur: 1,
                         feature: {
@@ -632,9 +731,16 @@
                     }
                     s.route = String(v.route || s.route);
                     s.mode = mode;
+                    if (v.city) s.city = v.city;
+                    if (v.agency) s.agency = v.agency;
                     if (v.toward) s.toward = v.toward;
                     if (v.compass) s.compass = v.compass;
                     if (v.other) s.other = v.other;
+                    s.stop = v.stop || "";
+                    s.occupancy = v.occupancy || "";
+                    s.shortTurn = !!v.short_turn;
+                    s.alert = v.alert || "";
+                    s.bunched = !!v.bunched;
                 }
             }
             if (full) {
@@ -649,6 +755,10 @@
             const waiting = document.getElementById("waiting");
             if (fleet.size > 0) waiting.hidden = true;
             paintSheet();
+            const searchBox = document.getElementById("results");
+            if (searchBox && searchBox.classList.contains("open")) {
+                paintResults(document.getElementById("search").value);
+            }
         }
 
         function tick(now) {
@@ -700,49 +810,108 @@
             requestAnimationFrame(tick);
         }
 
+        function cityFleet() {
+            const rows = [];
+            fleet.forEach(function (s) {
+                if (vehicleCity(s) === activeCity) rows.push(s);
+            });
+            return rows;
+        }
+
         function paintSheet() {
-            document.getElementById("count").textContent = activeCount ? activeCount.toLocaleString() : (fleet.size ? fleet.size.toLocaleString() : "—");
-            document.getElementById("moving").textContent = movingCount ? movingCount.toLocaleString() : "—";
-            document.getElementById("speed").textContent = avgSpeed ? avgSpeed.toFixed(1) + " km/h" : "—";
+            const city = CITIES[activeCity] || {};
+            const rows = cityFleet();
+            let moving = 0;
+            let speedSum = 0;
+            let speedN = 0;
+            rows.forEach(function (s) {
+                if (!s.moving) return;
+                moving += 1;
+                const kmh = Number(s.shownKmh) || Number(s.speed) || 0;
+                if (kmh > 0) {
+                    speedSum += kmh;
+                    speedN += 1;
+                }
+            });
+            const count = document.getElementById("count");
+            const label = document.getElementById("count-label");
+            if (city.live === false) {
+                count.textContent = "—";
+                label.textContent = city.agency || activeCity;
+            } else {
+                count.textContent = rows.length ? rows.length.toLocaleString() : "—";
+                label.textContent = "vehicles in " + activeCity;
+            }
+            document.getElementById("moving").textContent = city.live === false ? "—" : (rows.length ? moving.toLocaleString() : "—");
+            document.getElementById("speed").textContent = speedN ? (speedSum / speedN).toFixed(1) + " km/h" : "—";
             const btn = document.getElementById("follow-btn");
-            if (filterMode === "streetcar") btn.textContent = "Follow a streetcar";
+            btn.disabled = city.live === false;
+            if (city.live === false) btn.textContent = "Live feed needs a key";
+            else if (filterMode === "streetcar") btn.textContent = activeCity === "Calgary" ? "Follow a train" : "Follow a streetcar";
             else if (filterMode === "express") btn.textContent = "Follow an express bus";
             else btn.textContent = "Follow a bus";
+            if (activeCity === "Winnipeg") btn.textContent = "No public live feed";
         }
 
         function paintRide(s) {
-            document.getElementById("ride-title").textContent = routeLabel(s.route);
+            document.getElementById("ride-title").textContent = routeLabel(s.route, vehicleCity(s));
             const way = document.getElementById("ride-way");
+            const stop = document.getElementById("ride-stop");
             const warn = document.getElementById("ride-warn");
+            const notes = [];
+            const agency = s.agency ? s.agency + " · " : "";
             if (s.toward) {
                 const going = s.compass ? "Going " + s.compass.toLowerCase() + " toward " + s.toward : "Toward " + s.toward;
-                document.getElementById("ride-sub").textContent = going;
+                document.getElementById("ride-sub").textContent = agency + going;
                 way.textContent = s.other ? (s.other + "  →  " + s.toward) : "";
-                warn.textContent = s.other
-                    ? "This bus is going to " + s.toward + ". The one coming the other way goes to " + s.other + ", and it stops across the street."
-                    : "";
-            } else {
-                document.getElementById("ride-sub").textContent = modeLabel(s.mode) + " · Live";
+                notes.push("This bus is going to " + s.toward + "." + (s.other ? " The one coming the other way goes to " + s.other + ", and it stops across the street." : ""));
+            } else if (s.compass) {
+                document.getElementById("ride-sub").textContent = agency + "Heading " + s.compass.toLowerCase();
                 way.textContent = "";
-                warn.textContent = "";
+            } else {
+                document.getElementById("ride-sub").textContent = agency + modeLabel(s.mode) + " · Live";
+                way.textContent = "";
             }
+            stop.textContent = s.stop || "";
+            if (s.shortTurn) notes.push("This trip turns back early. It will not reach the far end of the route.");
+            if (s.occupancy === "Full" || s.occupancy === "Packed" || s.occupancy === "Not boarding") {
+                notes.push("This bus is " + s.occupancy.toLowerCase() + ". Let it pass.");
+            } else if (s.occupancy) {
+                notes.push(s.occupancy + ".");
+            }
+            if (s.bunched) notes.push("Another bus on this route is right beside this one.");
+            if (s.alert) notes.push(s.alert);
+            warn.textContent = notes.join(" ");
             document.getElementById("ride-speed").textContent = (s.shownKmh || 0).toFixed(0) + " km/h";
             document.getElementById("ride-head").textContent = s.compass || compass(s.bearing);
         }
 
+        function paintFeed(age) {
+            const el = document.getElementById("feed-age");
+            const seconds = Number(age);
+            if (!seconds || seconds < 25) {
+                el.style.display = "none";
+                el.textContent = "";
+                return;
+            }
+            el.style.display = "block";
+            el.classList.toggle("bad", seconds >= 60);
+            el.textContent = seconds >= 60 ? "Feed is " + Math.round(seconds) + "s old" : "Feed " + Math.round(seconds) + "s";
+        }
+
         function applyStats(message) {
-            if (message.active_vehicles != null) activeCount = Number(message.active_vehicles) || 0;
-            if (message.moving_vehicles != null) movingCount = Number(message.moving_vehicles) || 0;
-            if (message.avg_speed != null) avgSpeed = Number(message.avg_speed) || 0;
+            if (message.agencies) agencyStatus = message.agencies;
+            const mine = agencyStatus[activeCity];
+            if (mine && mine.feed_age_seconds != null) paintFeed(mine.feed_age_seconds);
+            else if (activeCity === "Toronto" && message.feed_age_seconds != null) paintFeed(message.feed_age_seconds);
+            else paintFeed(0);
             paintSheet();
         }
 
         function matchesPool(s) {
+            if (vehicleCity(s) !== activeCity) return false;
             if (filterMode !== "all" && s.mode !== filterMode) return false;
-            if (!query) return true;
-            const r = (s.route || "").toLowerCase();
-            const q = query.toLowerCase();
-            return r === q || r.startsWith(q);
+            return matchesSearch(s);
         }
 
         function followNext() {
@@ -777,7 +946,7 @@
             paintRide(s);
             if (mapLoaded) {
                 map.setFilter("follow-halo", ["==", ["get", "id"], id]);
-                map.flyTo({
+                flySafe({
                     center: [s.lon, s.lat],
                     zoom: FOLLOW_ZOOM,
                     bearing: s.bearing,
@@ -798,7 +967,7 @@
             if (mapLoaded) map.setFilter("follow-halo", ["==", ["get", "id"], ""]);
             if (flyHome !== false && mapLoaded) {
                 if (query) fitQuery();
-                else map.flyTo(Object.assign({ duration: 1200, essential: true }, HERO));
+                else flySafe(cityCamera());
             }
         }
 
@@ -815,26 +984,207 @@
                 hint.style.display = "none";
                 return;
             }
+            const label = (picked && (picked.toward || picked.title)) || query;
             hint.style.display = "block";
-            hint.textContent = n ? n + " vehicles on " + query : "No vehicles on " + query;
+            hint.textContent = n ? n + " vehicles · " + label : "Nothing live for " + label;
             if (n && mapLoaded && !followId) {
                 map.fitBounds(bounds, { padding: { top: 150, bottom: 260, left: 40, right: 40 }, maxZoom: 16.2, pitch: 62, duration: 900 });
             }
         }
 
+        function closeResults() {
+            const box = document.getElementById("results");
+            box.classList.remove("open");
+            box.innerHTML = "";
+            resultHits = [];
+            document.getElementById("search").setAttribute("aria-expanded", "false");
+        }
+
+        function clearSearch() {
+            query = "";
+            picked = null;
+            document.getElementById("search").value = "";
+            document.getElementById("clear").hidden = true;
+            document.querySelectorAll("#chips .chip").forEach(function (chip) { chip.classList.remove("on"); });
+            closeResults();
+        }
+
         function setQuery(value) {
             query = (value || "").trim();
-            document.getElementById("search").value = query;
+            picked = query ? { kind: "route", city: activeCity, route: query, title: routeLabel(query, activeCity) } : null;
+            document.getElementById("search").value = query ? routeLabel(query, activeCity) : "";
             document.getElementById("clear").hidden = !query;
-            document.querySelectorAll(".chip").forEach(function (chip) {
+            document.querySelectorAll("#chips .chip").forEach(function (chip) {
                 chip.classList.toggle("on", chip.dataset.route === query);
             });
+            closeResults();
             if (followId) stopFollow(false);
             if (!query) {
-                document.getElementById("hint").style.display = "none";
-                if (mapLoaded) map.flyTo(Object.assign({ duration: 900, essential: true }, HERO));
+                showCityNote();
+                flySafe(cityCamera());
                 return;
             }
+            fitQuery();
+        }
+
+        function suggest(text) {
+            const q = (text || "").trim().toLowerCase();
+            if (q.length < 1) return [];
+            const hits = [];
+            Object.keys(CITIES).forEach(function (city) {
+                const info = CITIES[city];
+                const agency = info.agency || "";
+                if (city.toLowerCase().indexOf(q) === 0 || (q.length >= 2 && agency.toLowerCase().indexOf(q) !== -1)) {
+                    hits.push({
+                        kind: "city",
+                        city: city,
+                        title: city,
+                        sub: agency + (info.live === false ? " · " + (info.note || "feed unavailable") : " · live"),
+                        score: city.toLowerCase().indexOf(q) === 0 ? 100 : 80
+                    });
+                }
+            });
+            const groups = {};
+            fleet.forEach(function (s) {
+                const route = String(s.route || "");
+                if (!route || route === "Unknown") return;
+                const name = vehicleCity(s) === "Toronto" ? (ROUTE_NAMES[route] || "") : "";
+                const label = (route + " " + name).trim().toLowerCase();
+                const toward = s.toward || "";
+                const stop = s.stop || "";
+                let score = 0;
+                let bucket = "";
+                if (route && route.toLowerCase() === q) {
+                    score = 95;
+                    bucket = "route";
+                } else if (q.length >= 2 && /^\d+$/.test(q) && route.toLowerCase().indexOf(q) === 0) {
+                    score = 72;
+                    bucket = "route";
+                } else if (name && name.toLowerCase().indexOf(q) !== -1) {
+                    score = 78;
+                    bucket = "route";
+                } else if (label.indexOf(q) === 0) {
+                    score = 70;
+                    bucket = "route";
+                } else if (toward && toward.toLowerCase().indexOf(q) === 0) {
+                    score = 64;
+                    bucket = "dest";
+                } else if (q.length >= 3 && toward && toward.toLowerCase().indexOf(q) !== -1) {
+                    score = 50;
+                    bucket = "dest";
+                } else if (q.length >= 3 && stop && stop.toLowerCase().indexOf(q) !== -1) {
+                    score = 36;
+                    bucket = "stop";
+                }
+                if (!score) return;
+                const city = vehicleCity(s);
+                const place = stopPlace(stop);
+                const key = bucket === "route" ? city + "|r|" + route
+                    : bucket === "dest" ? city + "|d|" + route + "|" + toward
+                    : city + "|s|" + place;
+                const current = groups[key];
+                if (!current) {
+                    groups[key] = {
+                        kind: bucket === "route" ? "route" : bucket === "dest" ? "destination" : "stop",
+                        city: city,
+                        route: bucket === "stop" ? "" : route,
+                        toward: bucket === "dest" ? toward : "",
+                        stop: bucket === "stop" ? place : "",
+                        title: bucket === "dest" ? toward : bucket === "stop" ? place : routeLabel(route, city),
+                        agency: s.agency || city,
+                        score: score,
+                        n: 1
+                    };
+                } else {
+                    current.n += 1;
+                    current.score = Math.max(current.score, score);
+                }
+            });
+            Object.keys(groups).forEach(function (key) { hits.push(groups[key]); });
+            hits.forEach(function (hit) {
+                if (hit.kind === "city") return;
+                const count = hit.n + (hit.n === 1 ? " vehicle" : " vehicles");
+                if (hit.kind === "route") hit.sub = hit.agency + " · " + count;
+                else if (hit.kind === "destination") hit.sub = hit.agency + " · route " + hit.route + " · " + count + " this way";
+                else hit.sub = hit.agency + " · " + count + " near this stop";
+            });
+            hits.sort(function (a, b) {
+                const order = { city: 0, route: 1, destination: 2, stop: 3 };
+                return (order[a.kind] - order[b.kind]) || (b.score - a.score) || ((b.n || 0) - (a.n || 0));
+            });
+            return hits.slice(0, 8);
+        }
+
+        function paintResults(text) {
+            const box = document.getElementById("results");
+            const hits = suggest(text);
+            resultHits = hits;
+            resultIndex = 0;
+            box.innerHTML = "";
+            if (!(text || "").trim()) {
+                closeResults();
+                return;
+            }
+            if (!hits.length) {
+                const empty = document.createElement("div");
+                empty.className = "result empty";
+                empty.textContent = "No routes, stops, or cities match";
+                box.appendChild(empty);
+                box.classList.add("open");
+                document.getElementById("search").setAttribute("aria-expanded", "true");
+                return;
+            }
+            hits.forEach(function (hit, i) {
+                const btn = document.createElement("button");
+                btn.type = "button";
+                btn.className = "result" + (i === 0 ? " on" : "");
+                btn.setAttribute("role", "option");
+                const title = document.createElement("b");
+                title.textContent = hit.title;
+                const sub = document.createElement("span");
+                sub.textContent = hit.sub || "";
+                btn.appendChild(title);
+                btn.appendChild(sub);
+                btn.addEventListener("mousedown", function (e) { e.preventDefault(); });
+                btn.addEventListener("click", function () { commitHit(hit); });
+                box.appendChild(btn);
+            });
+            box.classList.add("open");
+            document.getElementById("search").setAttribute("aria-expanded", "true");
+        }
+
+        function moveResult(step) {
+            if (!resultHits.length) return;
+            resultIndex = (resultIndex + step + resultHits.length) % resultHits.length;
+            document.querySelectorAll("#results .result").forEach(function (el, i) {
+                el.classList.toggle("on", i === resultIndex);
+            });
+        }
+
+        function commitHit(hit) {
+            closeResults();
+            if (!hit) return;
+            if (hit.kind === "city") {
+                clearSearch();
+                goCity(hit.city, true);
+                return;
+            }
+            goCity(hit.city, false);
+            query = hit.route || hit.stop || "";
+            picked = {
+                kind: hit.kind,
+                city: hit.city,
+                route: hit.route || "",
+                toward: hit.toward || "",
+                stop: hit.stop || "",
+                title: hit.title
+            };
+            document.getElementById("search").value = hit.title;
+            document.getElementById("clear").hidden = false;
+            document.querySelectorAll("#chips .chip").forEach(function (chip) {
+                chip.classList.toggle("on", chip.dataset.route === query && !picked.toward);
+            });
+            if (followId) stopFollow(false);
             fitQuery();
         }
 
@@ -850,7 +1200,7 @@
             hint.textContent = text;
             clearTimeout(showHint._t);
             showHint._t = setTimeout(function () {
-                if (!query) hint.style.display = "none";
+                if (!query) showCityNote();
             }, 2400);
         }
 
@@ -871,7 +1221,8 @@
 
         function bootFleet() {
             if (map.getLayer("vehicles")) return;
-            map.setPadding({ top: 96, bottom: 230, left: 16, right: 16 });
+            const narrow = window.matchMedia("(max-width: 720px)").matches;
+            map.setPadding({ top: narrow ? 148 : 110, bottom: narrow ? 280 : 230, left: 12, right: narrow ? 12 : 16 });
             map.setLight({ anchor: "viewport", color: "#ffffff", intensity: 0.65, position: [1.2, 160, 45] });
             ["bus", "streetcar", "express", "stopped"].forEach(function (kind) {
                 const canvas = vehicleCanvas(kind);
@@ -885,7 +1236,7 @@
                 source: "fleet",
                 filter: ["==", ["get", "id"], ""],
                 paint: {
-                    "circle-radius": 22,
+                    "circle-radius": 13,
                     "circle-color": "rgba(255,255,255,0.14)",
                     "circle-stroke-width": 2,
                     "circle-stroke-color": "#ffffff",
@@ -900,9 +1251,9 @@
                 filter: ["==", ["get", "show"], 1],
                 layout: {
                     "icon-image": ["get", "icon"],
-                    "icon-size": ["interpolate", ["linear"], ["zoom"], 12, 0.42, 14.5, 0.68, 16.6, 1, 18, 1.2],
-                    "icon-rotate": ["get", "bearing"],
-                    "icon-rotation-alignment": "map",
+                    "icon-size": ["interpolate", ["linear"], ["zoom"], 12, 0.7, 15, 0.85, 17, 1, 18.5, 1.1],
+                    "icon-rotate": 0,
+                    "icon-rotation-alignment": "viewport",
                     "icon-pitch-alignment": "viewport",
                     "icon-allow-overlap": true,
                     "icon-ignore-placement": true
@@ -946,30 +1297,127 @@
             document.getElementById("recenter").hidden = true;
             const s = fleet.get(followId);
             if (s) {
-                map.flyTo({ center: [s.lon, s.lat], zoom: FOLLOW_ZOOM, bearing: s.bearing, pitch: 64, duration: 700, essential: true });
+                flySafe({ center: [s.lon, s.lat], zoom: FOLLOW_ZOOM, bearing: s.bearing, pitch: 64, duration: 700, essential: true });
             }
         });
-        document.getElementById("search").addEventListener("input", function (e) { setQuery(e.target.value); });
-        document.getElementById("search").addEventListener("keydown", function (e) {
-            if (e.key === "Enter") followNext();
+        document.getElementById("search").addEventListener("input", function (e) {
+            document.getElementById("clear").hidden = !e.target.value;
+            paintResults(e.target.value);
         });
-        document.getElementById("clear").addEventListener("click", function () { setQuery(""); });
-        document.getElementById("cities").addEventListener("click", function (e) {
-            const btn = e.target.closest("[data-city]");
-            if (!btn) return;
-            const city = CITIES[btn.dataset.city];
-            if (!city) return;
-            document.querySelectorAll("#cities .chip").forEach(function (el) { el.classList.toggle("on", el === btn); });
+        document.getElementById("search").addEventListener("keydown", function (e) {
+            if (e.key === "ArrowDown") {
+                e.preventDefault();
+                moveResult(1);
+            } else if (e.key === "ArrowUp") {
+                e.preventDefault();
+                moveResult(-1);
+            } else if (e.key === "Enter") {
+                e.preventDefault();
+                if (resultHits.length) commitHit(resultHits[resultIndex] || resultHits[0]);
+                else followNext();
+            } else if (e.key === "Escape") {
+                closeResults();
+            }
+        });
+        document.getElementById("clear").addEventListener("click", function () {
+            clearSearch();
             if (followId) stopFollow(false);
-            userTookCamera = false;
-            map.flyTo({
+            showCityNote();
+            flySafe(cityCamera());
+        });
+        document.addEventListener("click", function (e) {
+            if (!e.target.closest(".where") && !e.target.closest("#results")) closeResults();
+        });
+        function flySafe(options) {
+            if (!mapLoaded) return;
+            map.setTerrain(null);
+            map.once("moveend", function () {
+                map.setTerrain({ source: "terrain", exaggeration: 1.35 });
+            });
+            map.flyTo(options);
+        }
+
+        function cityCamera() {
+            const city = CITIES[activeCity] || CITIES.Toronto;
+            return {
                 center: city.center,
                 zoom: city.zoom,
                 pitch: city.pitch,
                 bearing: city.bearing,
-                duration: 1600,
+                duration: 1200,
                 essential: true
+            };
+        }
+
+        function renderRoutes() {
+            const box = document.getElementById("chips");
+            const routes = (CITIES[activeCity] && CITIES[activeCity].routes) || [];
+            box.innerHTML = "";
+            box.style.display = routes.length ? "" : "none";
+            routes.forEach(function (route) {
+                const btn = document.createElement("button");
+                btn.className = "chip";
+                btn.type = "button";
+                btn.dataset.route = route.id;
+                btn.textContent = route.label;
+                box.appendChild(btn);
             });
+        }
+
+        function syncFilters() {
+            const street = document.querySelector('[data-mode="streetcar"]');
+            const express = document.querySelector('[data-mode="express"]');
+            if (activeCity === "Calgary") {
+                street.hidden = false;
+                street.textContent = "Train";
+            } else if (activeCity === "Toronto") {
+                street.hidden = false;
+                street.textContent = "Streetcar";
+            } else {
+                street.hidden = true;
+            }
+            express.hidden = activeCity !== "Toronto";
+            if (street.hidden && filterMode === "streetcar") filterMode = "all";
+            if (express.hidden && filterMode === "express") filterMode = "all";
+            document.querySelectorAll(".filter").forEach(function (el) {
+                el.classList.toggle("on", el.dataset.mode === filterMode);
+            });
+        }
+
+        function showCityNote() {
+            const city = CITIES[activeCity] || {};
+            const hint = document.getElementById("hint");
+            if (city.note && !query) {
+                hint.style.display = "block";
+                hint.textContent = city.note;
+                return;
+            }
+            if (!query) hint.style.display = "none";
+        }
+
+        function goCity(name, fly) {
+            const city = CITIES[name];
+            if (!city) return;
+            activeCity = name;
+            document.querySelectorAll("#cities .chip").forEach(function (el) {
+                el.classList.toggle("on", el.dataset.city === name);
+            });
+            if (followId) stopFollow(false);
+            userTookCamera = false;
+            syncFilters();
+            renderRoutes();
+            paintSheet();
+            if (fly !== false) {
+                showCityNote();
+                flySafe(cityCamera());
+            }
+        }
+
+        document.getElementById("cities").addEventListener("click", function (e) {
+            const btn = e.target.closest("[data-city]");
+            if (!btn || !CITIES[btn.dataset.city]) return;
+            clearSearch();
+            goCity(btn.dataset.city, true);
         });
         document.getElementById("chips").addEventListener("click", function (e) {
             const btn = e.target.closest(".chip");
@@ -999,7 +1447,7 @@
         });
 
         function loadSnapshot() {
-            fetch("/api/transit/vehicles?limit=3000")
+            fetch("/api/transit/vehicles?limit=8000")
                 .then(function (res) { return res.json(); })
                 .then(function (data) { ingest(data.vehicles || [], true); })
                 .catch(function () {});
@@ -1031,6 +1479,8 @@
             };
         }
 
+        renderRoutes();
+        syncFilters();
         requestAnimationFrame(tick);
         connect();
     </script>
